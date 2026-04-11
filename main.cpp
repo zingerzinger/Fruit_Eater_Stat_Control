@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
         if (lpressed) { lr -= 1; }
         if (rpressed) { lr += 1; }
 
-        creature->manualControl(CREATURE_MAX_SPEED * ud, CREATURE_MAX_ROT_SPEED_DPS * lr);
+        creature->manualControl(ud * CREATURE_FWDFMAX, lr * CREATURE_ANGFMAX);
 
         sim->step(SIM_DT);
 

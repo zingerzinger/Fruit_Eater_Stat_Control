@@ -88,8 +88,8 @@ void Sim::render()
         for (int i = 0; i < sizeof(rcreature) / sizeof(Vec2) - 1; i++)
         {
             Vec2 va, vb;
-            va = addVec(c->pos, rotateDegs(c->angle, rcreature[i  ]));
-            vb = addVec(c->pos, rotateDegs(c->angle, rcreature[i+1]));
+            va = addVec(c->pos, rotateDegs(c->orientation, rcreature[i  ]));
+            vb = addVec(c->pos, rotateDegs(c->orientation, rcreature[i+1]));
             SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
         }
     }
@@ -99,16 +99,16 @@ void Sim::render()
 
         Vec2 vc;
 
-        vc = addVec(c->pos, rotateDegs(c->angle, Vec2(CREATURE_BEAM_R, 0)));
+        vc = addVec(c->pos, rotateDegs(c->orientation, Vec2(CREATURE_BEAM_R, 0)));
         SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, vc.x, vc.y);
 
-        vc = addVec(c->pos, rotateDegs(c->angle - CREATURE_FOV_DEGS*0.5, Vec2(CREATURE_BEAM_R, 0)));
+        vc = addVec(c->pos, rotateDegs(c->orientation - CREATURE_FOV_DEGS*0.5, Vec2(CREATURE_BEAM_R, 0)));
         SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, vc.x, vc.y);
 
-        vc = addVec(c->pos, rotateDegs(c->angle + CREATURE_FOV_DEGS*0.5, Vec2(CREATURE_BEAM_R, 0)));
+        vc = addVec(c->pos, rotateDegs(c->orientation + CREATURE_FOV_DEGS*0.5, Vec2(CREATURE_BEAM_R, 0)));
         SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, vc.x, vc.y);
 
-        renderArc(c->pos, CREATURE_BEAM_R, c->angle - CREATURE_FOV_DEGS*0.5, CREATURE_FOV_DEGS, 10.0);
+        renderArc(c->pos, CREATURE_BEAM_R, c->orientation - CREATURE_FOV_DEGS*0.5, CREATURE_FOV_DEGS, 10.0);
     }
 
     SDL_Rect rect;
@@ -172,12 +172,19 @@ void Sim::step(double dt_secs)
     // creature physics
     for (Creature* c : creatures) {
 
-        c->angle += c->rotSpeedDegs * dt_secs;
-        if (c->angle > 360.0) { c->angle -= 360.0; }
-        if (c->angle <   0.0) { c->angle += 360.0; }
+        c->w   += (c->rotF / CREATURE_ANGM) * dt_secs;
+        c->vel += (c->fwdF / CREATURE_MASS) * dt_secs;
 
-        Vec2 orient = rotateDegs(c->angle, Vec2(1, 0));
-        c->pos = addVec( c->pos, mulVecScalar(c->speedMps * dt_secs, orient) );
+        c->w   = clamp(c->w  , -CREATURE_MAX_ROT_SPEED_DPS, CREATURE_MAX_ROT_SPEED_DPS);
+        c->vel = clamp(c->vel, -CREATURE_MAX_SPEED        , CREATURE_MAX_SPEED        );
+
+        c->orientation += c->w * dt_secs;
+
+        if (c->orientation > 360.0) { c->orientation -= 360.0; }
+        if (c->orientation <   0.0) { c->orientation += 360.0; }
+
+        Vec2 orient = rotateDegs(c->orientation, Vec2(1, 0));
+        c->pos = addVec( c->pos, mulVecScalar(c->vel * dt_secs, orient) );
 
     }
 
@@ -205,8 +212,8 @@ void Sim::step(double dt_secs)
 
             if (VecLenSq(delta) > CREATURE_BEAM_R*CREATURE_BEAM_R) { continue; }
 
-            Vec2 orientRayL = rotateDegs(c->angle - CREATURE_FOV_DEGS * 0.5, Vec2(1, 0));
-            Vec2 orientRayR = rotateDegs(c->angle + CREATURE_FOV_DEGS * 0.5, Vec2(1, 0));
+            Vec2 orientRayL = rotateDegs(c->orientation - CREATURE_FOV_DEGS * 0.5, Vec2(1, 0));
+            Vec2 orientRayR = rotateDegs(c->orientation + CREATURE_FOV_DEGS * 0.5, Vec2(1, 0));
 
             if (vecCross(orientRayL, delta) < 0 ||
                 vecCross(orientRayR, delta) > 0) { continue; }

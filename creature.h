@@ -18,12 +18,14 @@ public:
 
     void manualControl(double speed, double direction);
 
-    Vec2 pos;
-    Vec2 dir;
-    double angle = 0.0;
+    double w = 0.0;
+    double orientation = 0.0;
 
-    float rotSpeedDegs = 0.0f;
-    float speedMps = 0.0f;
+    double vel = 0.0;
+    Vec2 pos;
+
+    float rotF = 0.0f;
+    float fwdF = 0.0f;
 
     QQueue<Vec2> trail;
 
@@ -36,6 +38,8 @@ private:
 
     Vec2 lpos;
     uint64_t ltimeNoFruit = 0;
+
+    double deltaDegsPrev = 0.0;
 };
 
 Creature::Creature()
@@ -46,8 +50,8 @@ Creature::Creature()
 void Creature::manualControl(double speed, double direction)
 {
     if (!manual) { return; }
-    speedMps = speed;
-    rotSpeedDegs = direction;
+    fwdF = speed;
+    rotF = direction;
 }
 
 void Creature::showFruit(Vec2 f)
@@ -136,23 +140,25 @@ void Creature::step(double dt_secs)
 
     // target
 
-    Vec2 orientRay = VecUnit( rotateDegs(angle, Vec2(1, 0)) );
+    Vec2 orientRay = VecUnit( rotateDegs(orientation, Vec2(1, 0)) );
     Vec2 targetRay = VecUnit( subVec(target, pos) );
 
     //double tdistSq = VecLenSq( subVec(target, pos) );
 
     // l : +, r : -
     double deltaDegs = rad2deg( asin(vecCross(orientRay, targetRay)) );
+    double angleErrorDelta = deltaDegs - deltaDegsPrev;
 
     double dir = deltaDegs > 0 ? 1 : -1;
-    rotSpeedDegs = abs(deltaDegs) * dir;
+    rotF = abs(deltaDegs) * dir;
 
     if (abs(deltaDegs) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
-        speedMps = CREATURE_MAX_SPEED;
-        rotSpeedDegs = (CREATURE_ROT_P_K * abs(deltaDegs)) * dir;
+        fwdF = 1;
     }
 
-    rotSpeedDegs = clamp(rotSpeedDegs, -CREATURE_MAX_ROT_SPEED_DPS, CREATURE_MAX_ROT_SPEED_DPS);
+    rotF = (CREATURE_ROT_P_K * abs(deltaDegs)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
+
+    deltaDegsPrev = deltaDegs;
 }
 
 #endif // CREATURE_H
