@@ -2,29 +2,26 @@
 #include <sstream>
 #include <iomanip>
 #include <thread>
-#include <vector>
-#include <deque>
 #include <string.h>
 #include <chrono>
-#include <atomic>
-#include <mutex>
-
 #include <math.h>
-#include <random>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
 #include "defines.h"
-#include "vec2.h"
+#include "utils.h"
 #include "sim.h"
 #include "creature.h"
 
 /* TODO:
- * - algorithmic control system
+ *
+ * - random fruit generation
+ *
  * - fast simulation system without rendering (process samples)
  * - simulation logging
  * - statitics gathering system
+ *
  * - statistical control system
  */
 
@@ -46,12 +43,6 @@ TTF_Font* font;
 
 Sim* sim;
 Creature* creature;
-
-double fRand(double fMin, double fMax)
-{
-    double f = (double)rand() / RAND_MAX;
-    return fMin + f * (fMax - fMin);
-}
 
 void processInput()
 {
@@ -77,6 +68,8 @@ void processInput()
                 if (event.key.keysym.sym == SDLK_DOWN ) { dpressed =  true; }
                 if (event.key.keysym.sym == SDLK_LEFT ) { lpressed =  true; }
                 if (event.key.keysym.sym == SDLK_RIGHT) { rpressed =  true; }
+
+                if (event.key.keysym.sym == SDLK_m) { creature->manual = !creature->manual; }
 
             } break;
 
@@ -136,12 +129,10 @@ int main(int argc, char *argv[])
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
         SDL_RenderClear(renderer);
-
         sim->render();
-
         SDL_RenderPresent(renderer);
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000/60));
+        std::this_thread::sleep_for(std::chrono::milliseconds(FPS));
     }
 
     // === === ===

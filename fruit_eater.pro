@@ -21,4 +21,4 @@ HEADERS += \
     creature.h \
     defines.h \
     sim.h \
-    vec2.h
+    utils.h

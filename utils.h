@@ -1,7 +1,11 @@
 #ifndef VEC_H
 #define VEC_H
 
+#include <chrono>
+#include <atomic>
+#include <mutex>
 #include <math.h>
+#include <random>
 
 #define M_PI 3.14159265358979323846
 #define EULER 2.71828182845904523536
@@ -79,6 +83,10 @@ double vecDot(Vec2 a, Vec2 b) {
     return a.x * b.x + a.y * b.y;
 }
 
+double vecCross(Vec2 a, Vec2 b) {
+    return a.x * b.y - a.y * b.x;
+}
+
 Vec2 VecUnit(Vec2 vi) {
     Vec2 r;
     double l = VecLen(vi);
@@ -110,6 +118,12 @@ uint64_t micros() {
         std::chrono::high_resolution_clock::now().time_since_epoch())
         .count();
     return us;
+}
+
+double fRand(double fMin, double fMax)
+{
+    double f = (double)rand() / RAND_MAX;
+    return fMin + f * (fMax - fMin);
 }
 
 #endif // VEC_H

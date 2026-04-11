@@ -122,9 +122,28 @@ void Sim::render()
         SDL_RenderFillRect(renderer, &rect);
     }
 
+    for (Creature* c : creatures) {
+        SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, c->target.x, c->target.y);
+    }
+
+    // render creature memory fruits
+    SDL_SetRenderDrawColor(renderer, 255, 0, 255, 0); // magenta
+    SDL_Rect rectMemFruit;
+    rectMemFruit.w = FRUIT_R+6;
+    rectMemFruit.h = FRUIT_R+6;
+
+    for (Creature* c : creatures) {
+        for (Vec2 f : c->fruits) {
+            rectMemFruit.x = f.x - ((FRUIT_R+6)/2);
+            rectMemFruit.y = f.y - ((FRUIT_R+6)/2);
+            SDL_RenderDrawRect(renderer, &rectMemFruit);
+        }
+    }
+
     // trail
     SDL_SetRenderDrawColor(renderer, 128, 128, 128, 0); // grey
     for (Creature* c : creatures) {
+
         if (c->trail.size() < 2) { break; }
 
         Vec2 vp = c->trail.first();
@@ -163,7 +182,6 @@ void Sim::step(double dt_secs)
     }
 
     // creature - fruit interaction (no ray-sphere intersection yet)
-
     for (Creature* c : creatures) {
 
         for (int i = fruits.size()-1; i >= 0; i--) {
@@ -175,6 +193,25 @@ void Sim::step(double dt_secs)
                 c->removeFruit(f);
                 fruits.remove(i);
             }
+        }
+    }
+
+    // show visible fruits
+    for (Creature* c : creatures) {
+
+        for (Vec2 f : fruits) {
+
+            Vec2 delta = subVec(f, c->pos);
+
+            if (VecLenSq(delta) > CREATURE_BEAM_R*CREATURE_BEAM_R) { continue; }
+
+            Vec2 orientRayL = rotateDegs(c->angle - CREATURE_FOV_DEGS * 0.5, Vec2(1, 0));
+            Vec2 orientRayR = rotateDegs(c->angle + CREATURE_FOV_DEGS * 0.5, Vec2(1, 0));
+
+            if (vecCross(orientRayL, delta) < 0 ||
+                vecCross(orientRayR, delta) > 0) { continue; }
+
+            c->showFruit(f);
         }
     }
 
