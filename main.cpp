@@ -15,13 +15,8 @@
 #include "creature.h"
 
 /* TODO:
- *
- * - random fruit generation
- *
- * - fast simulation system without rendering (process samples)
- * - simulation logging
  * - statitics gathering system
- *
+ * - random fruit generation
  * - statistical control system
  */
 
@@ -85,8 +80,65 @@ void processInput()
     }
 }
 
+#include <QFile>
+#include <QDataStream>
+void testTelem()
+{
+    QFile* telemFile;
+    QDataStream* telemStream;
+
+    telemFile = new QFile("data_raw.bin");
+    if (!telemFile->open(QIODevice::ReadOnly)) { return; }
+
+    telemStream = new QDataStream(telemFile);
+
+    bool   targetChange  ;
+    double angleError    ;
+    double targetDistance;
+    double targetx       ;
+    double targety       ;
+    double posx          ;
+    double posy          ;
+    double rotF          ;
+    double fwdF          ;
+    double vel           ;
+    double w;            ;
+
+    int t;
+
+    while (!telemStream->atEnd()) {
+        *telemStream  >> targetChange  ;
+        *telemStream  >> angleError    ;
+        *telemStream  >> targetDistance;
+        *telemStream  >> targetx       ;
+        *telemStream  >> targety       ;
+        *telemStream  >> posx          ;
+        *telemStream  >> posy          ;
+        *telemStream  >> rotF          ;
+        *telemStream  >> fwdF          ;
+        *telemStream  >> vel           ;
+        *telemStream  >> w;            ;
+
+        qDebug() << t
+                 << targetChange
+                 << angleError
+                 << targetDistance
+                 << targetx
+                 << targety
+                 << posx
+                 << posy
+                 << rotF
+                 << fwdF
+                 << vel
+                 << w;
+        t++;
+    }
+}
+
 int main(int argc, char *argv[])
 {
+    //testTelem(); return 0;
+
     SDL_Init(SDL_INIT_EVERYTHING);
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1" );
@@ -136,6 +188,8 @@ int main(int argc, char *argv[])
     }
 
     // === === ===
+
+    delete sim;
 
     TTF_Quit();
 

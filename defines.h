@@ -6,6 +6,7 @@
 
 #define FPS (1000 / 60)
 #define SIM_DT (1.0 / 60.0)
+#define SIM_WR_TELEM 0
 
 #define W_W 1280
 #define W_H 1024

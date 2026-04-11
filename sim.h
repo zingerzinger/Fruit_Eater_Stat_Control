@@ -4,6 +4,9 @@
 #include <QDebug>
 #include <QVector>
 
+#include <QFile>
+#include <QDataStream>
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
@@ -14,6 +17,7 @@ class Sim
 {
 public:
     Sim(SDL_Renderer* renderer);
+    ~Sim();
 
     void step(double dt_secs);
 
@@ -52,11 +56,34 @@ private:
         {-10,  -10},
         {-10,   10},
     };
+
+    bool wrTelem = false;
+    QFile* telemFile;
+    QDataStream* telemStream;
 };
 
 Sim::Sim(SDL_Renderer* renderer)
 {
     this->renderer = renderer;
+
+#if SIM_WR_TELEM
+    telemFile = new QFile("data.bin");
+    if (telemFile->open(QIODevice::WriteOnly)) {
+        wrTelem = true;
+        telemStream = new QDataStream(telemFile);
+    }
+#endif
+}
+
+Sim::~Sim()
+{
+    if (!wrTelem) { return; }
+
+    telemStream->commitTransaction();
+    telemFile->close();
+
+    delete telemStream;
+    delete telemFile;
 }
 
 void Sim::renderArc(Vec2 p, double r, double sAngleDegs, double arcLenDegs, double angleStepDegs)
@@ -223,6 +250,23 @@ void Sim::step(double dt_secs)
     }
 
     for (Creature* c : creatures) { c->step(dt_secs); }
+
+    // === === ===
+    if (wrTelem) {
+        Creature* cr = creatures.first();
+
+        *telemStream << cr->targetChange
+                     << cr->angleError
+                     << cr->targetDistance
+                     << cr->target.x
+                     << cr->target.y
+                     << cr->pos.x
+                     << cr->pos.y
+                     << cr->rotF
+                     << cr->fwdF
+                     << cr->vel
+                     << cr->w;
+    }
 }
 
 void Sim::addCreature(int id, Creature &creature)

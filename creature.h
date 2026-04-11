@@ -30,16 +30,25 @@ public:
     QQueue<Vec2> trail;
 
     QVector<Vec2> fruits;
-    Vec2 target;
-    bool manual = true;
 
+    Vec2 target;
+    double angleError = 0.0;
+    double targetDistance = 0.0;
+    bool targetChange = false;
+
+    bool manual = true;
 
 private:
 
     Vec2 lpos;
     uint64_t ltimeNoFruit = 0;
 
+    int targetIdx = -1;
+    int prevTargetIdx = -1;
+
     double deltaDegsPrev = 0.0;
+
+    int targetCounter = 10;
 };
 
 Creature::Creature()
@@ -112,6 +121,7 @@ void Creature::step(double dt_secs)
 
     if (fidx >= 0) { // found the target
         target = fruits[fidx];
+        targetIdx = fidx;
     } else { // no fruits, choose random target position to roam
 
         uint64_t ctime = micros();
@@ -135,10 +145,14 @@ void Creature::step(double dt_secs)
                     break;
                 }
             }
+
+            targetCounter++;
+            targetIdx = targetCounter;
         }
     }
 
-    // target
+    targetChange = targetIdx != prevTargetIdx;
+    prevTargetIdx = targetIdx;
 
     Vec2 orientRay = VecUnit( rotateDegs(orientation, Vec2(1, 0)) );
     Vec2 targetRay = VecUnit( subVec(target, pos) );
@@ -159,6 +173,9 @@ void Creature::step(double dt_secs)
     rotF = (CREATURE_ROT_P_K * abs(deltaDegs)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
 
     deltaDegsPrev = deltaDegs;
+
+    angleError = deltaDegs;
+    targetDistance = VecLen( subVec(target, pos) );
 }
 
 #endif // CREATURE_H
