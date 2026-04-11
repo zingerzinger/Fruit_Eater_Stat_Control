@@ -1,10 +1,10 @@
 #ifndef CREATURE_H
 #define CREATURE_H
 
-#include "vec2.h"
+#include <QQueue>
 
-#define W_W 1280
-#define W_H 1024
+#include "defines.h"
+#include "vec2.h"
 
 class Creature
 {
@@ -13,7 +13,8 @@ public:
 
     void step(double dt_secs);
 
-    void showFruit(int x, int y);
+    void showFruit(Vec2 f);
+    void removeFruit(Vec2 f);
 
     void manualControl(double speed, double direction);
 
@@ -23,6 +24,12 @@ public:
 
     float rotSpeedDegs = 0.0f;
     float speedMps = 0.0f;
+
+    QQueue<Vec2> trail;
+
+private:
+
+    Vec2 lpos;
 };
 
 Creature::Creature()
@@ -36,9 +43,25 @@ void Creature::manualControl(double speed, double direction)
     rotSpeedDegs = direction;
 }
 
-void Creature::step(double dt_secs)
+void Creature::showFruit(Vec2 f)
 {
 
+}
+
+void Creature::removeFruit(Vec2 f)
+{
+
+}
+
+void Creature::step(double dt_secs)
+{
+    // trail
+    double dsq = VecLenSq( subVec(pos, lpos) );
+    if (dsq >= CREATURE_TRAJECTORY_MIN_STEP * CREATURE_TRAJECTORY_MIN_STEP) {
+        trail.append(pos);
+        lpos = pos;
+    }
+    if (trail.size() > CREATURE_TRAJECTORY_SIZE) { trail.removeFirst(); }
 }
 
 #endif // CREATURE_H

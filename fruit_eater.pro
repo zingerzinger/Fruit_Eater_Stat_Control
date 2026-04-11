@@ -19,5 +19,6 @@ LIBS += -L/usr/lib -lSDL2 -lSDL2_ttf
 
 HEADERS += \
     creature.h \
+    defines.h \
     sim.h \
     vec2.h

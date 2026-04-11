@@ -7,10 +7,8 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+#include "defines.h"
 #include "creature.h"
-
-#define W_W 1280
-#define W_H 1024
 
 class Sim
 {
@@ -26,12 +24,17 @@ public:
     void addCreature(int id, Creature &creature);
     void removeCreature(int id);
 
+    void addFruit(Vec2 pos);
+
 private:
 
     QVector<Creature*> creatures;
+    QVector<Vec2> fruits;
 
     bool enabled = true;
     SDL_Renderer* renderer = nullptr;
+
+    void renderArc(Vec2 p, double r, double sAngleDegs, double arcLenDegs, double angleStepDegs);
 
     // === graphics ===
 
@@ -49,13 +52,6 @@ private:
         {-10,  -10},
         {-10,   10},
     };
-
-    Vec2 rbeam[4] = {
-        {10,    0},
-        {80,   40},
-        {80,  -40},
-        {10,    0},
-    };
 };
 
 Sim::Sim(SDL_Renderer* renderer)
@@ -63,9 +59,25 @@ Sim::Sim(SDL_Renderer* renderer)
     this->renderer = renderer;
 }
 
+void Sim::renderArc(Vec2 p, double r, double sAngleDegs, double arcLenDegs, double angleStepDegs)
+{
+    Vec2 vp = addVec(p, rotateDegs(sAngleDegs, Vec2(r, 0)));
+    for (double a = 0.0; a < arcLenDegs; a += angleStepDegs) {
+        Vec2 vc = addVec(p, rotateDegs(sAngleDegs + a, Vec2(r, 0)));
+        SDL_RenderDrawLine(renderer, vp.x, vp.y, vc.x, vc.y);
+        vp = vc;
+    }
+
+    // last segment
+    Vec2 vc = addVec(p, rotateDegs(sAngleDegs + arcLenDegs, Vec2(r, 0)));
+    SDL_RenderDrawLine(renderer, vp.x, vp.y, vc.x, vc.y);
+}
+
 void Sim::render()
 {
     if (!enabled) { return; }
+
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 0); // green
 
     for (int i = 0; i < sizeof(wborder) / sizeof(Vec2) - 1; i++)
     {
@@ -76,17 +88,54 @@ void Sim::render()
         for (int i = 0; i < sizeof(rcreature) / sizeof(Vec2) - 1; i++)
         {
             Vec2 va, vb;
-
             va = addVec(c->pos, rotateDegs(c->angle, rcreature[i  ]));
             vb = addVec(c->pos, rotateDegs(c->angle, rcreature[i+1]));
-            SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
-
-            va = addVec(c->pos, rotateDegs(c->angle, rbeam[i  ]));
-            vb = addVec(c->pos, rotateDegs(c->angle, rbeam[i+1]));
             SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
         }
     }
 
+    for (Creature* c : creatures) {
+        // FOV & direction
+
+        Vec2 vc;
+
+        vc = addVec(c->pos, rotateDegs(c->angle, Vec2(CREATURE_BEAM_R, 0)));
+        SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, vc.x, vc.y);
+
+        vc = addVec(c->pos, rotateDegs(c->angle - CREATURE_FOV_DEGS*0.5, Vec2(CREATURE_BEAM_R, 0)));
+        SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, vc.x, vc.y);
+
+        vc = addVec(c->pos, rotateDegs(c->angle + CREATURE_FOV_DEGS*0.5, Vec2(CREATURE_BEAM_R, 0)));
+        SDL_RenderDrawLine(renderer, c->pos.x, c->pos.y, vc.x, vc.y);
+
+        renderArc(c->pos, CREATURE_BEAM_R, c->angle - CREATURE_FOV_DEGS*0.5, CREATURE_FOV_DEGS, 10.0);
+    }
+
+    SDL_Rect rect;
+    rect.w = FRUIT_R+1;
+    rect.h = FRUIT_R+1;
+    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 0); // red
+
+    for (Vec2 f : fruits) {
+        rect.x = f.x - (FRUIT_R/2);
+        rect.y = f.y - (FRUIT_R/2);
+        SDL_RenderFillRect(renderer, &rect);
+    }
+
+    // trail
+    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 0); // grey
+    for (Creature* c : creatures) {
+        if (c->trail.size() < 2) { break; }
+
+        Vec2 vp = c->trail.first();
+        int i = 1;
+        while (i < c->trail.size()) {
+            Vec2 vc = c->trail[i];
+            SDL_RenderDrawLine(renderer, vp.x, vp.y, vc.x, vc.y);
+            vp = vc;
+            i++;
+        }
+    }
 }
 
 void Sim::setVisualEnabled(bool enabled)
@@ -94,8 +143,14 @@ void Sim::setVisualEnabled(bool enabled)
 
 }
 
+void Sim::addFruit(Vec2 pos)
+{
+    fruits.append(pos);
+}
+
 void Sim::step(double dt_secs)
 {
+    // creature physics
     for (Creature* c : creatures) {
 
         c->angle += c->rotSpeedDegs * dt_secs;
@@ -105,7 +160,22 @@ void Sim::step(double dt_secs)
         Vec2 orient = rotateDegs(c->angle, Vec2(1, 0));
         c->pos = addVec( c->pos, mulVecScalar(c->speedMps * dt_secs, orient) );
 
+    }
 
+    // creature - fruit interaction (no ray-sphere intersection yet)
+
+    for (Creature* c : creatures) {
+
+        for (int i = fruits.size()-1; i >= 0; i--) {
+            Vec2 f = fruits[i];
+
+            Vec2 delta = subVec(f, c->pos);
+
+            if (VecLenSq( delta ) <= ((CREATURE_R+FRUIT_R)*(CREATURE_R+FRUIT_R))) {
+                c->removeFruit(f);
+                fruits.remove(i);
+            }
+        }
     }
 
     for (Creature* c : creatures) { c->step(dt_secs); }
@@ -123,85 +193,3 @@ void Sim::removeCreature(int id)
 }
 
 #endif // SIM_H
-
-// ===========
-
-
-
-
-//void renderSmoke()
-//{
-//    SDL_Rect rect;
-//    rect.w = 4;
-//    rect.h = 4;
-//
-//    SDL_SetRenderDrawColor(renderer, 172, 172, 172, 255);
-//
-//    for (Smoke s : smoke)
-//    {
-//        rect.x = s.pos.x - rect.w / 2;
-//        rect.y = s.pos.y - rect.h / 2;
-//
-//        int r = 255;
-//        int g = 255;
-//        int b = 255;
-//
-//        if (s.life > 256-40) {
-//            r = 255;
-//            g = 255;
-//            b = 0;
-//        } else if (s.life > 256-72) {
-//            r = s.life;
-//            g = 128;
-//            b = 128;
-//        } else {
-//            r = 52 + s.life;
-//            g = 52 + s.life;
-//            b = 52 + s.life;
-//        }
-//
-//        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-//
-//        SDL_RenderFillRect(renderer, &rect);
-//    }
-//}
-//
-//void renderShip()
-//{
-//    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-//
-//    Vec2 va;
-//    Vec2 vb;
-//
-//    for (int i = 0; i < sizeof(ship) / sizeof(Vec2) - 1; i++)
-//    {
-//        va = addVec(shipPos, rotateDegs(shipAngleDegs, ship[i  ]));
-//        vb = addVec(shipPos, rotateDegs(shipAngleDegs, ship[i+1]));
-//        SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
-//    }
-//
-//
-//    for (int i = 0; i < sizeof(shipCenter) / sizeof(Vec2) - 1; i++)
-//    {
-//        va = addVec(shipPos, rotateDegs(shipAngleDegs, shipCenter[i  ]));
-//        vb = addVec(shipPos, rotateDegs(shipAngleDegs, shipCenter[i+1]));
-//        SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
-//    }
-//
-//    for (int i = 0; i < sizeof(shipRCS) / sizeof(Vec2) - 1; i++)
-//    {
-//        va = addVec(shipPos, rotateDegs(shipAngleDegs, shipRCS[i  ]));
-//        vb = addVec(shipPos, rotateDegs(shipAngleDegs, shipRCS[i+1]));
-//        SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
-//    }
-//
-//
-//    Vec2 nozzlePosShip = {0, 39};
-//
-//    for (int i = 0; i < sizeof(shipEngine) / sizeof(Vec2) - 1; i++)
-//    {
-//        va = addVec(shipPos, rotateDegs(shipAngleDegs, addVec(nozzlePosShip, rotateDegs(gimbalAngleDegs, shipEngine[i  ]))));
-//        vb = addVec(shipPos, rotateDegs(shipAngleDegs, addVec(nozzlePosShip, rotateDegs(gimbalAngleDegs, shipEngine[i+1]))));
-//        SDL_RenderDrawLine(renderer, va.x, va.y, vb.x, vb.y);
-//    }
-//}

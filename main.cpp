@@ -15,6 +15,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+#include "defines.h"
 #include "vec2.h"
 #include "sim.h"
 #include "creature.h"
@@ -28,12 +29,6 @@
  */
 
 using namespace std;
-
-#define W_W 1280
-#define W_H 1024
-
-#define FPS (1000.0 / 60.0)
-#define DT (1.0 / FPS)
 
 SDL_Window* window;
 SDL_Renderer* renderer;
@@ -66,6 +61,14 @@ void processInput()
     while (SDL_PollEvent(&event)) {
 
         switch (event.type) {
+
+            case SDL_MOUSEBUTTONDOWN: {
+
+                int mX, mY;
+                SDL_GetMouseState(&mX, &mY);
+                sim->addFruit(Vec2(mX, mY));
+
+            } break;
 
             case SDL_KEYDOWN: {
                 if (event.key.keysym.sym == SDLK_ESCAPE) { running = false; }
@@ -127,14 +130,12 @@ int main(int argc, char *argv[])
         if (lpressed) { lr -= 1; }
         if (rpressed) { lr += 1; }
 
-        creature->manualControl(40.0 * ud, 40 * lr);
+        creature->manualControl(CREATURE_MAX_SPEED * ud, CREATURE_MAX_ROT_SPEED_DPS * lr);
 
-        sim->step(1.0 / 60.0);
+        sim->step(SIM_DT);
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
         SDL_RenderClear(renderer);
-
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 0);
 
         sim->render();
 
