@@ -58,26 +58,6 @@ void processInputMainNN()
                 if (event.key.keysym.sym == SDLK_LEFT ) { lpressed =  true; }
                 if (event.key.keysym.sym == SDLK_RIGHT) { rpressed =  true; }
 
-//                if (event.key.keysym.sym == SDLK_q) {
-//                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
-//                    simSkipFrames--;
-//
-//                    if (simSkipFrames <= 0) {
-//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-//                    }
-//                }
-//
-//                if (event.key.keysym.sym == SDLK_w) {
-//                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
-//                    simSkipFrames++;
-//
-//                    if (simLoopSleepUs <= 0) {
-//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-//                    }
-//                }
-
             } break;
 
             case SDL_KEYUP: {
@@ -256,20 +236,24 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 
 // === === ===
 
-// experiment : the input changes from 0.0 to 1.0 at step 0.1
-// 1000 epochs per step
+// training method : random weights
 
-// training method : random coeffs
+// fittness function : input == output * 0.5
 
-// fittness function 1 : input = output
-// fittness function 2 : input = output * 0.5
+// 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
 
-#define NUM_EXPERIMENTS 10
-#define NUM_EPOCHS      1000
-#define BEST_CRITERIA   0.02
+#define NUM_EPOCHS          1000  // generate weights
+#define NUM_EXPERIMENTS     250   // perform all experiments (values are the dataset)
+#define EXPERIMENT_VAL_STEP 0.01  // 0.0 .. 1.0
 
-int experimentNum = 0;
+#define BEST_CRITERIA   0.025 // abs(in-out) average difference per epoch
+
+#define BST_SHOW_US 250000
+
 int epochNum = 0;
+int experimentNum = 0;
+
+double avgEpochFitnes = 0.0;
 
 double minFTN = MAXFLOAT;
 
@@ -279,32 +263,23 @@ void experiment(double in, double out)
 {
     for (Neuron* n : neurons) { n->signalCalculated = false; }
 
-    for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
-
     inputN->setSignal(in);
     double NNval = outputN->Signal();
 
     double FTN = abs(NNval - out);
-
-    if (FTN < minFTN) { minFTN = FTN; }
-
-    if (FTN <= BEST_CRITERIA) { showNewBest = true; }
-
-    qDebug() << "EXP" << experimentNum << "EPCH" << epochNum << "OUT" << NNval << "FTN" << FTN << "BST" << minFTN;
+    avgEpochFitnes += FTN;
 }
 
 int main(int argc, char *argv[])
 {
-    //testTelem(); return 0;
-
-    simLoopSleepUs = LOOP_SLEEP_US;
+    simLoopSleepUs = 50;// 1ms //LOOP_SLEEP_US;
     simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
     SDL_Init(SDL_INIT_EVERYTHING);
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1" );
 
-    window = SDL_CreateWindow("main", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W_W, W_H, SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN);
+    window = SDL_CreateWindow("main", 650, 450, W_W, W_H, SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN);
     renderer = SDL_CreateRenderer(window, -1, 0);
 
     TTF_Init();
@@ -318,37 +293,46 @@ int main(int argc, char *argv[])
 
     initNNLinks();
 
+    // generate random weights
+    for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
+
     while (running) {
 
         SDL_PumpEvents();
-
         processInputMainNN();
 
-        int ud = 0;
-        int lr = 0;
+// ======================================================================================
+// ============================= train the NN ===========================================
+// ======================================================================================
 
-        if (upressed) { ud += 1; }
-        if (dpressed) { ud -= 1; }
-        if (lpressed) { lr -= 1; }
-        if (rpressed) { lr += 1; }
+        // 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
 
-        // === train the NN ===
+        if (experimentNum > NUM_EXPERIMENTS) { // next epoch
 
-        if (experimentNum >= NUM_EXPERIMENTS) { goto lblTrainingFinished; }
+            avgEpochFitnes /= NUM_EXPERIMENTS;
 
-        //experiment(experimentNum / (double)NUM_EXPERIMENTS, experimentNum / (double)NUM_EXPERIMENTS);
-        experiment(1.0, 1.0);
+            if (avgEpochFitnes < minFTN) { minFTN = avgEpochFitnes; }
+            if (avgEpochFitnes <= BEST_CRITERIA) { showNewBest = true; }
+            qDebug() << "EPCH" << epochNum << "FTN" << avgEpochFitnes << "BST" << minFTN;
 
-        epochNum++;
-
-        if (epochNum >= NUM_EPOCHS) {
-            epochNum = 0;
-            experimentNum++;
+            avgEpochFitnes = 0.0;
+            experimentNum = 0;
+            epochNum++;
+            // generate random weights
+            for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
         }
+
+        if (epochNum > NUM_EPOCHS) { goto lblTrainingFinished; }
+
+        experiment(experimentNum / (double)NUM_EXPERIMENTS, experimentNum / (double)NUM_EXPERIMENTS * 0.5);
+
+        experimentNum++;
 
         lblTrainingFinished:
 
-        // === === ===
+// ======================================================================================
+// ======================================================================================
+// ======================================================================================
 
         SDL_SetRenderDrawColor(renderer, 64, 64, 64, 0);
         SDL_RenderClear(renderer);
@@ -368,7 +352,7 @@ int main(int argc, char *argv[])
 
         if (showNewBest) {
             showNewBest = false;
-            std::this_thread::sleep_for(std::chrono::microseconds(1 * 1000000));
+            std::this_thread::sleep_for(std::chrono::microseconds(BST_SHOW_US));
             qDebug() << "NEW BEST";
         }
         std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
