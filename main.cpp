@@ -34,6 +34,9 @@ bool dpressed = false;
 bool lpressed = false;
 bool rpressed = false;
 
+int simLoopSleepUs;
+int simSkipFrames;
+
 TTF_Font* font;
 
 Sim* sim;
@@ -65,6 +68,26 @@ void processInput()
                 if (event.key.keysym.sym == SDLK_RIGHT) { rpressed =  true; }
 
                 if (event.key.keysym.sym == SDLK_m) { creature->manual = !creature->manual; }
+
+                if (event.key.keysym.sym == SDLK_q) {
+                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
+                    simSkipFrames--;
+
+                    if (simSkipFrames <= 0) {
+                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+                    }
+                }
+
+                if (event.key.keysym.sym == SDLK_w) {
+                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
+                    simSkipFrames++;
+
+                    if (simLoopSleepUs <= 0) {
+                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+                    }
+                }
 
             } break;
 
@@ -139,6 +162,9 @@ int main(int argc, char *argv[])
 {
     //testTelem(); return 0;
 
+    simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+    simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+
     SDL_Init(SDL_INIT_EVERYTHING);
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1" );
@@ -181,14 +207,14 @@ int main(int argc, char *argv[])
 
         sim->step(SIM_DT);
 
-        if (frameNum % SIM_SKIP_RENDER_FRAMES == 0) {
+        if (frameNum % simSkipFrames == 0) {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
             SDL_RenderClear(renderer);
             sim->render();
             SDL_RenderPresent(renderer);
         }
 
-        std::this_thread::sleep_for(std::chrono::microseconds(LOOP_SLEEP_US));
+        std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
 
         frameNum++;
     }
