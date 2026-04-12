@@ -62,7 +62,7 @@ void processInputMainNN()
 
             case SDL_KEYUP: {
 
-                if (event.key.keysym.sym == SDLK_UP   ) { upressed = false; }
+                //if (event.key.keysym.sym == SDLK_UP   ) { upressed = false; }
                 if (event.key.keysym.sym == SDLK_DOWN ) { dpressed = false; }
                 if (event.key.keysym.sym == SDLK_LEFT ) { lpressed = false; }
                 if (event.key.keysym.sym == SDLK_RIGHT) { rpressed = false; }
@@ -113,6 +113,12 @@ struct Neuron
 
     int xRendCoord;
     int yRendCoord;
+
+    int xid;
+    int yid;
+
+    bool isInput;
+    bool isOutput;
 
     QVector<Link*> links;
 
@@ -176,6 +182,9 @@ void initNNLinks()
             if (!nCur) { continue; }
 
             neurons.append(nCur);
+
+            nCur->xid = x;
+            nCur->yid = y;
 
             nCur->xRendCoord = x * NN_RENDER_SPACING + NN_RENDER_OFFSET;
             nCur->yRendCoord = y * NN_RENDER_SPACING + NN_RENDER_OFFSET;
@@ -243,21 +252,25 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 // 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
 
 #define NUM_EPOCHS          1000  // generate weights
-#define NUM_EXPERIMENTS     250   // perform all experiments (values are the dataset)
+#define NUM_EXPERIMENTS     1000  // perform all experiments (values are the dataset)
 #define EXPERIMENT_VAL_STEP 0.01  // 0.0 .. 1.0
 
-#define BEST_CRITERIA   0.025 // abs(in-out) average difference per epoch
+#define BEST_CRITERIA   0.05 // abs(in-out) average difference per epoch
 
 #define BST_SHOW_US 250000
 
 int epochNum = 0;
 int experimentNum = 0;
-
 double avgEpochFitnes = 0.0;
-
 double minFTN = MAXFLOAT;
-
 bool showNewBest = false;
+bool trainingFinished = false;
+
+QVector<Neuron*> trainedNeurons;
+QVector<Link*> trainedLinks;
+
+Neuron* trainedInputN  = nullptr;
+Neuron* trainedOutputN = nullptr;
 
 void experiment(double in, double out)
 {
@@ -268,6 +281,13 @@ void experiment(double in, double out)
 
     double FTN = abs(NNval - out);
     avgEpochFitnes += FTN;
+}
+
+double calcOut(double in)
+{
+    for (Neuron* n : trainedNeurons) { n->signalCalculated = false; }
+    trainedInputN->setSignal(in);
+    return trainedOutputN->Signal();
 }
 
 int main(int argc, char *argv[])
@@ -293,6 +313,9 @@ int main(int argc, char *argv[])
 
     initNNLinks();
 
+    inputN ->isInput  = true;
+    outputN->isOutput = true;
+
     // generate random weights
     for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
 
@@ -301,9 +324,13 @@ int main(int argc, char *argv[])
         SDL_PumpEvents();
         processInputMainNN();
 
+        //if (!upressed) { continue; }
+
 // ======================================================================================
 // ============================= train the NN ===========================================
 // ======================================================================================
+
+        if (trainingFinished) { goto lblTrainingFinished; }
 
         // 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
 
@@ -311,8 +338,41 @@ int main(int argc, char *argv[])
 
             avgEpochFitnes /= NUM_EXPERIMENTS;
 
-            if (avgEpochFitnes < minFTN) { minFTN = avgEpochFitnes; }
-            if (avgEpochFitnes <= BEST_CRITERIA) { showNewBest = true; }
+            if (avgEpochFitnes <= BEST_CRITERIA && avgEpochFitnes < minFTN) {
+                minFTN = avgEpochFitnes;
+
+                qDeleteAll(trainedNeurons); trainedNeurons.clear();
+                qDeleteAll(trainedLinks  ); trainedLinks  .clear();
+                for (Neuron* n : neurons) { trainedNeurons.append(new Neuron(*n)); }
+                for (Link* l : linksGlob) { trainedLinks  .append(new Link  (*l)); }
+
+                // neuron --> links, io
+
+                for (Neuron* n : trainedNeurons) {
+                    if (n->isInput ) { trainedInputN  = n; }
+                    if (n->isOutput) { trainedOutputN = n; }
+                }
+
+                for (Link* l : trainedLinks) {
+
+                    for (Neuron* n : trainedNeurons) {
+
+                        if (l->neurFrom->xid == n->xid &&
+                            l->neurFrom->yid == n->yid) {
+                            l->neurFrom = n;
+                        }
+
+                        if (l->neurTo  ->xid == n->xid &&
+                            l->neurTo  ->yid == n->yid) {
+                            l->neurTo   = n;
+                        }
+
+                    }
+                }
+
+                showNewBest = true;
+            }
+
             qDebug() << "EPCH" << epochNum << "FTN" << avgEpochFitnes << "BST" << minFTN;
 
             avgEpochFitnes = 0.0;
@@ -322,7 +382,11 @@ int main(int argc, char *argv[])
             for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
         }
 
-        if (epochNum > NUM_EPOCHS) { goto lblTrainingFinished; }
+        if (epochNum > NUM_EPOCHS) {
+            // --> file
+            trainingFinished = true;
+            goto lblTrainingFinished;
+        }
 
         experiment(experimentNum / (double)NUM_EXPERIMENTS, experimentNum / (double)NUM_EXPERIMENTS * 0.5);
 
@@ -354,8 +418,36 @@ int main(int argc, char *argv[])
             showNewBest = false;
             std::this_thread::sleep_for(std::chrono::microseconds(BST_SHOW_US));
             qDebug() << "NEW BEST";
+            qDebug() << "==========================================================";
+            qDebug() << "==========================================================";
+
+            // save the best solution
+
+            for (Neuron* n : neurons) {
+                QString io = n->isInput ? "I" : (n->isOutput ? "O" : "");
+                qDebug() << "ID" << n->yid << n->xid << "IO" << io;
+            }
+
+            for (Link* l : linksGlob) {
+                QString s = QString("([%1][%2]) --> ([%3][%4]) | W %5").arg(l->neurFrom->yid)
+                                                                      .arg(l->neurFrom->xid)
+                                                                      .arg(l->neurTo  ->yid)
+                                                                      .arg(l->neurTo  ->xid)
+                                                                      .arg(l->weight);
+
+                qDebug() << s;
+            }
+
+            qDebug() << "==========================================================";
+            qDebug() << "==========================================================";
         }
         std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
+
+        if (trainingFinished) {
+            double inVal  = fRand(0, 1);
+            double outVal = calcOut(inVal);
+            qDebug() << inVal << outVal << (abs(inVal - outVal));
+        }
 
         frameNum++;
     }
