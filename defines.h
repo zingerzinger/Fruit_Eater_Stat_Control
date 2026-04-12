@@ -4,7 +4,7 @@
 #define W_W 1280
 #define W_H 1024
 
-#define LOOP_SLEEP_US (16000)//(1000 / 60)
+#define LOOP_SLEEP_US (16666)//(1000 / 60)
 #define SIM_DT (1.0 / 60.0)
 #define SIM_SKIP_RENDER_FRAMES 10
 #define SIM_WR_TELEM 0

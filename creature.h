@@ -27,13 +27,15 @@ struct Neuron;
 
 struct Link
 {
-    Link(Neuron* neuron, double weight)
+    Link(Neuron* neuronFrom, Neuron* neuronTo, double weight)
     {
-        this->neuron = neuron;
+        this->neurFrom = neuronFrom;
+        this->neurTo   = neuronTo;
         this->weight = weight;
     }
 
-    Neuron* neuron;
+    Neuron* neurFrom;
+    Neuron* neurTo;
     double weight;
 };
 
@@ -64,7 +66,7 @@ struct Neuron
          double out = 0;
 
          for (Link* link : links) {
-             out += link->neuron->Signal() * link->weight;
+             out += link->neurFrom->Signal() * link->weight;
          }
 
          signalCalculated = true;
@@ -317,9 +319,9 @@ void Creature::step(double dt_secs)
         neurons.append(&no_rotF      );
         neurons.append(&no_fwdf      );
 
-        no_rotF.links.append(new Link(&ni_angleError , 0.0));
-        no_rotF.links.append(new Link(&ni_angleDError, 0.0));
-        no_fwdf.links.append(new Link(&ni_fwdf       , 1.0));
+        no_rotF.links.append(new Link(&ni_angleError , &no_rotF, 0.0));
+        no_rotF.links.append(new Link(&ni_angleDError, &no_rotF, 0.0));
+        no_fwdf.links.append(new Link(&ni_fwdf       , &no_fwdf, 1.0));
     }
 
     // target calculation - search for closest ETA fruit ((?)rotation + distance)

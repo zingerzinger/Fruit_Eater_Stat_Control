@@ -6,7 +6,8 @@ CONFIG -= app_bundle
 DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
-        main.cpp
+        main.cpp \
+        mainNN.cpp
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
