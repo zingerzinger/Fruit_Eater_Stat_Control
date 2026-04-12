@@ -1,18 +1,15 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#define W_W 1280
-#define W_H 1024
+#define W_W 640
+#define W_H 480
 
-#define LOOP_SLEEP_US (16666)//(1000 / 60)
+#define LOOP_SLEEP_US (1000000 / 60)
 #define SIM_DT (1.0 / 60.0)
 #define SIM_SKIP_RENDER_FRAMES 10
 #define SIM_WR_TELEM 0
 
 #define SIM_LOOP_SLEEP_STEP_US 100
-
-#define W_W 1280
-#define W_H 1024
 
 #define CREATURE_MAX_SPEED 40.0
 #define CREATURE_MAX_ROT_SPEED_DPS 40.0

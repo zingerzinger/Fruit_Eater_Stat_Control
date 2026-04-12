@@ -9,6 +9,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+#include <QDebug>
 #include <QVector>
 
 #include "defines.h"
@@ -57,25 +58,25 @@ void processInputMainNN()
                 if (event.key.keysym.sym == SDLK_LEFT ) { lpressed =  true; }
                 if (event.key.keysym.sym == SDLK_RIGHT) { rpressed =  true; }
 
-                if (event.key.keysym.sym == SDLK_q) {
-                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
-                    simSkipFrames--;
-
-                    if (simSkipFrames <= 0) {
-                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-                    }
-                }
-
-                if (event.key.keysym.sym == SDLK_w) {
-                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
-                    simSkipFrames++;
-
-                    if (simLoopSleepUs <= 0) {
-                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-                    }
-                }
+//                if (event.key.keysym.sym == SDLK_q) {
+//                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
+//                    simSkipFrames--;
+//
+//                    if (simSkipFrames <= 0) {
+//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+//                    }
+//                }
+//
+//                if (event.key.keysym.sym == SDLK_w) {
+//                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
+//                    simSkipFrames++;
+//
+//                    if (simLoopSleepUs <= 0) {
+//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+//                    }
+//                }
 
             } break;
 
@@ -92,6 +93,22 @@ void processInputMainNN()
 }
 
 // === NN ===
+
+#define NN_H 3
+#define NN_W 4
+
+#define NN_NEURON_SIDE 20
+#define NN_RENDER_SPACING 40
+#define NN_RENDER_OFFSET 100
+
+/*           * 100%
+ *         * - ACTIVATION_THRESHOLD
+ *       * N%
+ *     * N%
+ *   * - ACTIVATION_THRESHOLD
+ * * 0%
+ */
+#define ACTIVATION_THRESHOLD 0.1
 
 struct Neuron;
 
@@ -142,6 +159,9 @@ struct Neuron
              out += link->neurFrom->Signal() * link->weight;
          }
 
+         if (out <       ACTIVATION_THRESHOLD) { out = 0.0; }
+         if (out > 1.0 - ACTIVATION_THRESHOLD) { out = 1.0; }
+
          signalCalculated = true;
          output = out;
          return output;
@@ -155,20 +175,15 @@ struct Neuron
     }
 };
 
-#define NN_H 3
-#define NN_W 4
+Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },
+                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},
+                          {                      0, new Neuron(), new Neuron(), 0                     },};
 
-#define NN_NEURON_SIDE 20
-#define NN_RENDER_SPACING 40
-#define NN_RENDER_OFFSET 100
+QVector<Neuron*> neurons;
+QVector<Link*> linksGlob;
 
-#define ACTIVATION_THRESHOLD 0.2
-
-Neuron n;
-
-Neuron* nn[NN_H][NN_W] = {{            0, new Neuron(), new Neuron(), 0            },
-                          { new Neuron(), new Neuron(), new Neuron(), new Neuron() },
-                          {            0, new Neuron(), new Neuron(), 0            },};
+Neuron* inputN  = nn[1][0];
+Neuron* outputN = nn[1][3];
 
 // === === ===
 
@@ -180,6 +195,8 @@ void initNNLinks()
             Neuron* nCur = nn[y][x];
             if (!nCur) { continue; }
 
+            neurons.append(nCur);
+
             nCur->xRendCoord = x * NN_RENDER_SPACING + NN_RENDER_OFFSET;
             nCur->yRendCoord = y * NN_RENDER_SPACING + NN_RENDER_OFFSET;
 
@@ -189,8 +206,49 @@ void initNNLinks()
                 Neuron* nPrev = nn[line][x-1];
                 if (!nPrev) { continue; }
 
-                Link* lnk = new Link(nPrev, nCur, 1.0);
+                Link* lnk = new Link(nPrev, nCur, 0.0);
                 nCur->links.append(lnk);
+                linksGlob.append(lnk);
+            }
+        }
+    }
+}
+
+void renderNN(Neuron* nn[NN_H][NN_W], int offset)
+{
+    SDL_Rect neuronVisRect;
+    neuronVisRect.w = NN_NEURON_SIDE;
+    neuronVisRect.h = NN_NEURON_SIDE;
+
+    // render neurons
+
+    for (int y = 0; y < NN_H; y++) {
+        for (int x = 0; x < NN_W; x++) {
+
+            Neuron* n = nn[y][x];
+            if (!n) { continue; }
+
+            SDL_SetRenderDrawColor(renderer, 0, n->output * 255.0, 0, 0);
+            neuronVisRect.x = x * NN_RENDER_SPACING - (NN_NEURON_SIDE / 2) + offset;
+            neuronVisRect.y = y * NN_RENDER_SPACING - (NN_NEURON_SIDE / 2) + offset;
+            SDL_RenderFillRect(renderer, &neuronVisRect);
+        }
+    }
+
+    // render links
+
+    for (int y = 0; y < NN_H; y++) {
+        for (int x = 0; x < NN_W; x++) {
+
+            Neuron* n = nn[y][x];
+            if (!n) { continue; }
+
+            for (Link* l : n->links) {
+
+                SDL_SetRenderDrawColor(renderer, 0, 0, l->weight * 255.0, 0);
+
+                SDL_RenderDrawLine(renderer, l->neurFrom->xRendCoord, l->neurFrom->yRendCoord,
+                                             l->neurTo  ->xRendCoord, l->neurTo  ->yRendCoord);
             }
         }
     }
@@ -198,11 +256,48 @@ void initNNLinks()
 
 // === === ===
 
+// experiment : the input changes from 0.0 to 1.0 at step 0.1
+// 1000 epochs per step
+
+// training method : random coeffs
+
+// fittness function 1 : input = output
+// fittness function 2 : input = output * 0.5
+
+#define NUM_EXPERIMENTS 10
+#define NUM_EPOCHS      1000
+#define BEST_CRITERIA   0.02
+
+int experimentNum = 0;
+int epochNum = 0;
+
+double minFTN = MAXFLOAT;
+
+bool showNewBest = false;
+
+void experiment(double in, double out)
+{
+    for (Neuron* n : neurons) { n->signalCalculated = false; }
+
+    for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
+
+    inputN->setSignal(in);
+    double NNval = outputN->Signal();
+
+    double FTN = abs(NNval - out);
+
+    if (FTN < minFTN) { minFTN = FTN; }
+
+    if (FTN <= BEST_CRITERIA) { showNewBest = true; }
+
+    qDebug() << "EXP" << experimentNum << "EPCH" << epochNum << "OUT" << NNval << "FTN" << FTN << "BST" << minFTN;
+}
+
 int main(int argc, char *argv[])
 {
     //testTelem(); return 0;
 
-    simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+    simLoopSleepUs = LOOP_SLEEP_US;
     simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -237,38 +332,45 @@ int main(int argc, char *argv[])
         if (lpressed) { lr -= 1; }
         if (rpressed) { lr += 1; }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+        // === train the NN ===
+
+        if (experimentNum >= NUM_EXPERIMENTS) { goto lblTrainingFinished; }
+
+        //experiment(experimentNum / (double)NUM_EXPERIMENTS, experimentNum / (double)NUM_EXPERIMENTS);
+        experiment(1.0, 1.0);
+
+        epochNum++;
+
+        if (epochNum >= NUM_EPOCHS) {
+            epochNum = 0;
+            experimentNum++;
+        }
+
+        lblTrainingFinished:
+
+        // === === ===
+
+        SDL_SetRenderDrawColor(renderer, 64, 64, 64, 0);
         SDL_RenderClear(renderer);
 
-        SDL_Rect neuronVisRect;
-        neuronVisRect.w = NN_NEURON_SIDE;
-        neuronVisRect.h = NN_NEURON_SIDE;
+        renderNN(nn, NN_RENDER_OFFSET);
 
-        // render NN
-
-        for (int y = 0; y < NN_H; y++) {
-            for (int x = 0; x < NN_W; x++) {
-
-                Neuron* n = nn[y][x];
-                if (!n) { continue; }
-
-                SDL_SetRenderDrawColor(renderer, 0, 255, 0, 0);
-                neuronVisRect.x = x * NN_RENDER_SPACING - (NN_NEURON_SIDE / 2) + NN_RENDER_OFFSET;
-                neuronVisRect.y = y * NN_RENDER_SPACING - (NN_NEURON_SIDE / 2) + NN_RENDER_OFFSET;
-                SDL_RenderDrawRect(renderer, &neuronVisRect);
-
-                for (Link* l : n->links) {
-
-                    SDL_SetRenderDrawColor(renderer, 0, 0, l->weight * 255.0, 0);
-
-                    SDL_RenderDrawLine(renderer, l->neurFrom->xRendCoord, l->neurFrom->yRendCoord,
-                                                 l->neurTo  ->xRendCoord, l->neurTo  ->yRendCoord);
-                }
-            }
-        }
+        // render screen border
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 0);
+        SDL_Rect wborderRect;
+        wborderRect.x = 0;
+        wborderRect.y = 0;
+        wborderRect.w = W_W-1;
+        wborderRect.h = W_H-1;
+        SDL_RenderDrawRect(renderer, &wborderRect);
 
         SDL_RenderPresent(renderer);
 
+        if (showNewBest) {
+            showNewBest = false;
+            std::this_thread::sleep_for(std::chrono::microseconds(1 * 1000000));
+            qDebug() << "NEW BEST";
+        }
         std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
 
         frameNum++;
