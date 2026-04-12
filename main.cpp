@@ -15,9 +15,9 @@
 #include "creature.h"
 
 /* TODO:
- * - statitics gathering system
- * - random fruit generation
- * - statistical control system
+ * ? statitics gathering system
+ * ~ random fruit generation (same as roaming)
+ * - NN training
  */
 
 using namespace std;

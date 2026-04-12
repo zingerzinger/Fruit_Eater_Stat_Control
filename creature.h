@@ -49,6 +49,32 @@ private:
     double deltaDegsPrev = 0.0;
 
     int targetCounter = 10;
+
+    uint64_t frameNum     = 0;
+    uint64_t frameNumPrev = 0;
+    double targetDistancePrev = 0;
+
+    void calcWeights();
+
+    void control_PD(double w,
+                    double orientation,
+                    Vec2   pos,
+                    double vel,
+                    float  rotF,
+                    float  fwdF,
+                    Vec2   targetPos,
+                    double angleError,
+                    double targetDistance);
+
+    void control_NN(double w,
+                    double orientation,
+                    Vec2   pos,
+                    double vel,
+                    float  rotF,
+                    float  fwdF,
+                    Vec2   targetPos,
+                    double angleError,
+                    double targetDistance);
 };
 
 Creature::Creature()
@@ -107,6 +133,8 @@ void Creature::step(double dt_secs)
 
     if (manual) { return; }
 
+    frameNum++;
+
     // target calculation - search for closest ETA fruit ((?)rotation + distance)
 
     double minTime = MAXFLOAT;
@@ -157,25 +185,171 @@ void Creature::step(double dt_secs)
     Vec2 orientRay = VecUnit( rotateDegs(orientation, Vec2(1, 0)) );
     Vec2 targetRay = VecUnit( subVec(target, pos) );
 
-    //double tdistSq = VecLenSq( subVec(target, pos) );
-
     // l : +, r : -
     double deltaDegs = rad2deg( asin(vecCross(orientRay, targetRay)) );
-    double angleErrorDelta = deltaDegs - deltaDegsPrev;
 
-    double dir = deltaDegs > 0 ? 1 : -1;
-    rotF = abs(deltaDegs) * dir;
+    // === === ===
 
-    if (abs(deltaDegs) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
+    if (targetChange) {
+        int64_t T = frameNum - frameNumPrev;
+        double  D = targetDistancePrev;
+        double  TTT = D / T;
+
+        frameNumPrev = frameNum;
+        targetDistancePrev = targetDistance;
+
+        //qDebug() << TTT;
+    }
+
+    // === === ===
+
+    control_NN(w,
+               orientation,
+               pos,
+               vel,
+               rotF,
+               fwdF,
+               target,
+               deltaDegs,
+               targetDistance);
+}
+
+void Creature::control_PD(double in_w,
+                          double in_orientation,
+                          Vec2   in_pos,
+                          double in_vel,
+                          float  in_rotF,
+                          float  in_fwdF,
+                          Vec2   in_targetPos,
+                          double in_angleError,
+                          double in_targetDistance)
+{
+    double angleErrorDelta = in_angleError - deltaDegsPrev;
+
+    double dir = in_angleError > 0 ? 1 : -1;
+
+    rotF = abs(in_angleError) * dir;
+
+    if (abs(in_angleError) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
         fwdF = 1;
     }
 
-    rotF = (CREATURE_ROT_P_K * abs(deltaDegs)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
+    rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
 
-    deltaDegsPrev = deltaDegs;
+    deltaDegsPrev = in_angleError;
 
-    angleError = deltaDegs;
-    targetDistance = VecLen( subVec(target, pos) );
+    angleError = in_angleError;
+    targetDistance = VecLen( subVec(in_targetPos, in_pos) );
 }
+
+struct Neuron;
+
+struct Link
+{
+    Link(Neuron* neuron, double weight)
+    {
+        this->neuron = neuron;
+        this->weight = weight;
+    }
+
+    Neuron* neuron;
+    double weight;
+};
+
+struct Neuron
+{
+    bool signalCalculated = false;
+    double output = 0;
+
+    QVector<Link*> links;
+
+    double Signal()
+    {
+         if (signalCalculated) { return output; }
+
+         double out = 0;
+
+         for (Link* link : links) {
+             out += link->neuron->Signal() * link->weight;
+         }
+
+         signalCalculated = true;
+         output = out;
+         return output;
+
+    }
+
+    // for input neurons
+    void setSignal(double value) {
+        signalCalculated = true;
+        output = value;
+    }
+};
+
+static bool nn_setup_done = false;
+
+Neuron ni_angleError;
+Neuron ni_fwdf;
+
+Neuron no_rotF;
+Neuron no_fwdf;
+
+QVector<Neuron*> neurons;
+
+/* ni_angleError --> no_rotF
+ * ni_fwdf       --> no_fwdf
+ */
+
+void Creature::calcWeights()
+{
+
+}
+
+void Creature::control_NN(double in_w,
+                          double in_orientation,
+                          Vec2   in_pos,
+                          double in_vel,
+                          float  in_rotF,
+                          float  in_fwdF,
+                          Vec2   in_targetPos,
+                          double in_angleError,
+                          double in_targetDistance)
+{
+
+    if (!nn_setup_done) {
+        nn_setup_done = true;
+
+        neurons.append(&ni_angleError);
+        neurons.append(&ni_fwdf      );
+        neurons.append(&no_rotF      );
+        neurons.append(&no_fwdf      );
+
+        no_rotF.links.append(new Link(&ni_angleError, 1.0));
+        no_fwdf.links.append(new Link(&ni_fwdf      , 1.0));
+    }
+
+    for (Neuron* n : neurons) { n->signalCalculated = false; }
+
+    ni_angleError.setSignal(in_angleError);
+    ni_fwdf      .setSignal(1.0);
+
+    rotF = no_rotF.Signal();
+    fwdF = no_fwdf.Signal();
+}
+
+// ideas:
+/*
+ * fitness criteria:
+ * minimize time to target (TTT):
+ *  T   = targetChange-targetChange
+ *  D   = targetDistance-targetDistancePrev
+ *  TTT = D/T
+ *
+ * random weights calculation
+ * 0.1 step [-1..1]
+ *
+ * ! NO NN resources freed upon shutdown, DNC for now
+ *
+ */
 
 #endif // CREATURE_H
