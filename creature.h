@@ -121,126 +121,22 @@ void Creature::removeFruit(Vec2 f)
     }
 }
 
-void Creature::step(double dt_secs)
-{
-    // trail
-    double dsq = VecLenSq( subVec(pos, lpos) );
-    if (dsq >= CREATURE_TRAJECTORY_MIN_STEP * CREATURE_TRAJECTORY_MIN_STEP) {
-        trail.append(pos);
-        lpos = pos;
-    }
-    if (trail.size() > CREATURE_TRAJECTORY_SIZE) { trail.removeFirst(); }
+// === NN ===
 
-    if (manual) { return; }
-
-    frameNum++;
-
-    // target calculation - search for closest ETA fruit ((?)rotation + distance)
-
-    double minTime = MAXFLOAT;
-    int fidx = -1;
-    int i = 0;
-
-    for (Vec2 f : fruits) {
-        double dist = VecLenSq( subVec(f, pos) );
-        if (dist < minTime) { minTime = dist; fidx = i; }
-        i++;
-    }
-
-    if (fidx >= 0) { // found the target
-        target = fruits[fidx];
-        targetIdx = fidx;
-    } else { // no fruits, choose random target position to roam
-
-        uint64_t ctime = micros();
-
-        if (ctime - ltimeNoFruit >= CREATURE_NO_FRUIT_RND_USEC ||
-            VecLenSq( subVec(target, pos) ) <= /* do not get too close to the random target to counter singularity */
-            (CREATURE_RND_MIN_TARGET_APPROACH_DIST * CREATURE_RND_MIN_TARGET_APPROACH_DIST)) {
-
-            ltimeNoFruit = ctime;
-
-            int attempts = 0;
-
-            while (true) {
-                target = Vec2(fRand(0, W_W), fRand(0, W_H));
-
-                if ( VecLenSq( subVec(target, pos) ) >= CREATURE_RND_MIN_TARGET_DIST) { break; }
-
-                attempts++;
-                if (attempts >= CREATURE_RND_TARGET_ATTEMPTS) {
-                    target = Vec2(); // goto left top corner
-                    break;
-                }
-            }
-
-            targetCounter++;
-            targetIdx = targetCounter;
-        }
-    }
-
-    targetChange = targetIdx != prevTargetIdx;
-    prevTargetIdx = targetIdx;
-
-    Vec2 orientRay = VecUnit( rotateDegs(orientation, Vec2(1, 0)) );
-    Vec2 targetRay = VecUnit( subVec(target, pos) );
-
-    // l : +, r : -
-    double deltaDegs = rad2deg( asin(vecCross(orientRay, targetRay)) );
-
-    // === === ===
-
-    if (targetChange) {
-        int64_t T = frameNum - frameNumPrev;
-        double  D = targetDistancePrev;
-        double  TTT = D / T;
-
-        frameNumPrev = frameNum;
-        targetDistancePrev = targetDistance;
-
-        //qDebug() << TTT;
-    }
-
-    // === === ===
-
-    control_NN(w,
-               orientation,
-               pos,
-               vel,
-               rotF,
-               fwdF,
-               target,
-               deltaDegs,
-               targetDistance);
-}
-
-void Creature::control_PD(double in_w,
-                          double in_orientation,
-                          Vec2   in_pos,
-                          double in_vel,
-                          float  in_rotF,
-                          float  in_fwdF,
-                          Vec2   in_targetPos,
-                          double in_angleError,
-                          double in_targetDistance)
-{
-    double angleErrorDelta = in_angleError - deltaDegsPrev;
-
-    double dir = in_angleError > 0 ? 1 : -1;
-
-    rotF = abs(in_angleError) * dir;
-
-    if (abs(in_angleError) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
-        fwdF = 1;
-    }
-
-    rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
-
-    deltaDegsPrev = in_angleError;
-
-    angleError = in_angleError;
-    targetDistance = VecLen( subVec(in_targetPos, in_pos) );
-}
+// ideas:
+/*
+ * fitness criteria:
+ * minimize time to target (TTT) (maximize speed):
+ *  T   = targetChange-targetChange
+ *  D   = targetDistance-targetDistancePrev
+ *  TTT = D/T
+ *
+ * random weights calculation
+ * 0.1 step [-1..1]
+ *
+ * ! NO NN resources freed upon shutdown, DNC for now
+ *
+ */
 
 struct Neuron;
 
@@ -300,9 +196,12 @@ QVector<Neuron*> neurons;
  * ni_fwdf       --> no_fwdf
  */
 
+double maxTTT = 0.0;
+double bestWeight = 0.0;
+
 void Creature::calcWeights()
 {
-
+    no_rotF.links[0]->weight = fRand(0.0, 1.0);
 }
 
 void Creature::control_NN(double in_w,
@@ -315,19 +214,6 @@ void Creature::control_NN(double in_w,
                           double in_angleError,
                           double in_targetDistance)
 {
-
-    if (!nn_setup_done) {
-        nn_setup_done = true;
-
-        neurons.append(&ni_angleError);
-        neurons.append(&ni_fwdf      );
-        neurons.append(&no_rotF      );
-        neurons.append(&no_fwdf      );
-
-        no_rotF.links.append(new Link(&ni_angleError, 1.0));
-        no_fwdf.links.append(new Link(&ni_fwdf      , 1.0));
-    }
-
     for (Neuron* n : neurons) { n->signalCalculated = false; }
 
     ni_angleError.setSignal(in_angleError);
@@ -337,19 +223,140 @@ void Creature::control_NN(double in_w,
     fwdF = no_fwdf.Signal();
 }
 
-// ideas:
-/*
- * fitness criteria:
- * minimize time to target (TTT):
- *  T   = targetChange-targetChange
- *  D   = targetDistance-targetDistancePrev
- *  TTT = D/T
- *
- * random weights calculation
- * 0.1 step [-1..1]
- *
- * ! NO NN resources freed upon shutdown, DNC for now
- *
- */
+// === === ===
+
+void Creature::step(double dt_secs)
+{
+    // trail
+    double dsq = VecLenSq( subVec(pos, lpos) );
+    if (dsq >= CREATURE_TRAJECTORY_MIN_STEP * CREATURE_TRAJECTORY_MIN_STEP) {
+        trail.append(pos);
+        lpos = pos;
+    }
+    if (trail.size() > CREATURE_TRAJECTORY_SIZE) { trail.removeFirst(); }
+
+    if (manual) { return; }
+
+    frameNum++;
+
+    if (!nn_setup_done) {
+        nn_setup_done = true;
+
+        neurons.append(&no_rotF      );
+        neurons.append(&no_fwdf      );
+
+        no_rotF.links.append(new Link(&ni_angleError, 1.0));
+        no_fwdf.links.append(new Link(&ni_fwdf      , 1.0));
+    }
+
+    // target calculation - search for closest ETA fruit ((?)rotation + distance)
+
+    double minTime = MAXFLOAT;
+    int fidx = -1;
+    int i = 0;
+
+    for (Vec2 f : fruits) {
+        double dist = VecLenSq( subVec(f, pos) );
+        if (dist < minTime) { minTime = dist; fidx = i; }
+        i++;
+    }
+
+    if (fidx >= 0) { // found the target
+        target = fruits[fidx];
+        targetIdx = fidx;
+    } else { // no fruits, choose random target position to roam
+
+        uint64_t ctime = micros();
+
+        if (ctime - ltimeNoFruit >= CREATURE_NO_FRUIT_RND_USEC ||
+            VecLenSq( subVec(target, pos) ) <= /* do not get too close to the random target to counter singularity */
+            (CREATURE_RND_MIN_TARGET_APPROACH_DIST * CREATURE_RND_MIN_TARGET_APPROACH_DIST)) {
+
+            ltimeNoFruit = ctime;
+
+            int attempts = 0;
+
+            while (true) {
+                target = Vec2(fRand(0, W_W), fRand(0, W_H));
+
+                if ( VecLenSq( subVec(target, pos) ) >= CREATURE_RND_MIN_TARGET_DIST) { break; }
+
+                attempts++;
+                if (attempts >= CREATURE_RND_TARGET_ATTEMPTS) {
+                    target = Vec2(); // goto left top corner
+                    break;
+                }
+            }
+
+            targetCounter++;
+            targetIdx = targetCounter;
+        }
+    }
+
+    targetChange = targetIdx != prevTargetIdx;
+    prevTargetIdx = targetIdx;
+
+    targetDistance = VecLen( subVec(target, pos) );
+
+    Vec2 orientRay = VecUnit( rotateDegs(orientation, Vec2(1, 0)) );
+    Vec2 targetRay = VecUnit( subVec(target, pos) );
+
+    // l : +, r : -
+    double deltaDegs = rad2deg( asin(vecCross(orientRay, targetRay)) );
+
+    // === === ===
+
+    if (targetChange) {
+        int64_t T = frameNum - frameNumPrev;
+        double  D = targetDistancePrev;
+        double  TTT = D / T;
+
+        calcWeights();
+
+        frameNumPrev = frameNum;
+        targetDistancePrev = targetDistance;
+
+        qDebug() << TTT << "|" << T << "|" << D;
+    }
+
+    // === === ===
+
+    control_NN(w,
+               orientation,
+               pos,
+               vel,
+               rotF,
+               fwdF,
+               target,
+               deltaDegs,
+               targetDistance);
+}
+
+void Creature::control_PD(double in_w,
+                          double in_orientation,
+                          Vec2   in_pos,
+                          double in_vel,
+                          float  in_rotF,
+                          float  in_fwdF,
+                          Vec2   in_targetPos,
+                          double in_angleError,
+                          double in_targetDistance)
+{
+    double angleErrorDelta = in_angleError - deltaDegsPrev;
+
+    double dir = in_angleError > 0 ? 1 : -1;
+
+    rotF = abs(in_angleError) * dir;
+
+    if (abs(in_angleError) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
+        fwdF = 1;
+    }
+
+    rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
+
+    deltaDegsPrev = in_angleError;
+
+    angleError = in_angleError;
+}
 
 #endif // CREATURE_H

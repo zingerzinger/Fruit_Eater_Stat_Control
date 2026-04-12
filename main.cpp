@@ -161,6 +161,8 @@ int main(int argc, char *argv[])
 
     // === === ===
 
+    uint64_t frameNum = 0;
+
     while (running) {
 
         SDL_PumpEvents();
@@ -179,12 +181,16 @@ int main(int argc, char *argv[])
 
         sim->step(SIM_DT);
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-        SDL_RenderClear(renderer);
-        sim->render();
-        SDL_RenderPresent(renderer);
+        if (frameNum % SIM_SKIP_RENDER_FRAMES == 0) {
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+            SDL_RenderClear(renderer);
+            sim->render();
+            SDL_RenderPresent(renderer);
+        }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(FPS));
+        std::this_thread::sleep_for(std::chrono::microseconds(LOOP_SLEEP_US));
+
+        frameNum++;
     }
 
     // === === ===
