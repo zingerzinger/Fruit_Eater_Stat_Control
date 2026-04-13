@@ -252,10 +252,10 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 // 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
 
 #define NUM_EPOCHS          1000  // generate weights
-#define NUM_EXPERIMENTS     1000  // perform all experiments (values are the dataset)
+#define NUM_EXPERIMENTS     10  // perform all experiments (values are the dataset)
 #define EXPERIMENT_VAL_STEP 0.01  // 0.0 .. 1.0
 
-#define BEST_CRITERIA   0.05 // abs(in-out) average difference per epoch
+#define BEST_CRITERIA   0.02 // abs(in-out) average difference per epoch
 
 #define BST_SHOW_US 250000
 
@@ -263,6 +263,7 @@ int epochNum = 0;
 int experimentNum = 0;
 double avgEpochFitnes = 0.0;
 double minFTN = MAXFLOAT;
+int numBest = 0;
 bool showNewBest = false;
 bool trainingFinished = false;
 
@@ -281,6 +282,10 @@ void experiment(double in, double out)
 
     double FTN = abs(NNval - out);
     avgEpochFitnes += FTN;
+
+    if (FTN <= BEST_CRITERIA) {
+        numBest++;
+    }
 }
 
 double calcOut(double in)
@@ -292,6 +297,97 @@ double calcOut(double in)
 
 int main(int argc, char *argv[])
 {
+    // === gradient minimum search ===
+
+    // f = x^2 + y^2
+
+    double f;
+    double fp;
+
+    Vec2 v(-1000, 100);
+    Vec2 dv(fRand(-0.3, 0.3), fRand(-0.3, 0.3)); // dir
+    Vec2 tv(0, 0);
+
+    double dfPrev = 1;
+
+    bool s1 = false;
+    bool s2 = false;
+    bool s3 = false;
+
+    int steps = 0;
+
+    while (1) {
+
+        steps++;
+
+        fp = v.x*v.x + v.y*v.y;
+        tv = addVec(v, dv);
+        f  = tv.x*tv.x + tv.y*tv.y;
+
+        double df = f - fp;
+
+        qDebug() << steps << "|" << f << "|" << df << "|" << (int)abs(df / dfPrev * 100.0) << "|" << ( QString("{%1,%2}").arg(v.x).arg(v.y) );
+        dfPrev = df;
+
+        dv = (df > 0 /*growth*/) ? mulVecScalar(-1.0, dv) : dv;
+        dv = addVec(dv, Vec2(fRand(-0.01, 0.01), fRand(-0.01, 0.01))); // divert from straight line a bit, might use the crossProduct actually (?)
+
+        s1 = s2;
+        s2 = s3;
+        s3 = df > 0;
+
+        if (s1 == s3 && s1 != s2) { // we're roaming between some 2 values
+            dv = mulVecScalar(0.5, dv); // decrease step
+        }
+
+        v = addVec(v, dv);
+
+        if (abs(f) < 0.01) { return 0; }
+
+        //std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+
+    // === === ===
+
+    // y = x^2
+    // start : x = -10
+    // find y global minimum
+
+    double xprev;
+    double x = 10.0;
+    double step = 0.01;
+    double yprev;
+    double y;
+
+    double criteria = 0.01;
+
+    double prevDeltaY = 0;
+
+    y = x*x;
+    yprev = y;
+
+    while (true)
+    {
+        yprev = x*x;
+        x+= step;
+        y = x*x;
+
+        if (y > yprev) {
+            step = -step;
+        }
+
+        double deltaY = abs(y-yprev);
+        if (deltaY > prevDeltaY) { step *= 0.5; }
+        prevDeltaY = deltaY;
+
+        qDebug() << step << "|"<< x << "|" << y;
+
+        if (deltaY <= criteria) { break; }
+    }
+
+    return 0;
+    // === === ===
+
     simLoopSleepUs = 50;// 1ms //LOOP_SLEEP_US;
     simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
@@ -338,8 +434,9 @@ int main(int argc, char *argv[])
 
             avgEpochFitnes /= NUM_EXPERIMENTS;
 
-            if (avgEpochFitnes <= BEST_CRITERIA && avgEpochFitnes < minFTN) {
+            if (/*avgEpochFitnes <= BEST_CRITERIA && avgEpochFitnes < minFTN*/ numBest >= (int)(NUM_EXPERIMENTS * (1.0 - BEST_CRITERIA))) {
                 minFTN = avgEpochFitnes;
+                numBest = 0;
 
                 qDeleteAll(trainedNeurons); trainedNeurons.clear();
                 qDeleteAll(trainedLinks  ); trainedLinks  .clear();
@@ -416,7 +513,7 @@ int main(int argc, char *argv[])
 
         if (showNewBest) {
             showNewBest = false;
-            std::this_thread::sleep_for(std::chrono::microseconds(BST_SHOW_US));
+            //std::this_thread::sleep_for(std::chrono::microseconds(BST_SHOW_US));
             qDebug() << "NEW BEST";
             qDebug() << "==========================================================";
             qDebug() << "==========================================================";
