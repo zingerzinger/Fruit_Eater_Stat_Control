@@ -74,9 +74,6 @@ void processInputMainNN()
 
 // === NN ===
 
-#define NN_H 3
-#define NN_W 3
-
 #define NN_NEURON_SIDE 20
 #define NN_RENDER_SPACING 40
 #define NN_RENDER_OFFSET 100
@@ -161,23 +158,29 @@ struct Neuron
     }
 };
 
-//Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },
-//                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},
-//                          {                      0, new Neuron(), new Neuron(), 0                     },};
+#define NN_H 3
+#define NN_W 3
+
+//// ---------------------------------------------------------------------------------------------------------
+////                                       in    -->      n    -->      n    -->     out                    //
+//Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },  //
+//                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},  //
+//                          {                      0, new Neuron(), new Neuron(), 0                     },};//
+//// -------------------------------------------------------------------------------------------------------//
 
 // --------------------------------------------------------------------------------------------
 //                                       in    -->      n    -->     out                     //
-Neuron* nn[NN_H][NN_W] = {{                      0,            0,                       },   //
+Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(),                       },   //
                           { /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},   //
-                          {                      0,            0,                       },}; //
+                          {                      0, new Neuron(),                       },}; //
 // --------------------------------------------------------------------------------------------
 
 QVector<Neuron*> neurons;
 QVector<Link*> linksGlob;
 QVector<Link*> hidLinks;
 
-Neuron* inputN  = nn[1][0];
-Neuron* outputN = nn[1][2];
+Neuron* inputN  = nn[1][   0  ];
+Neuron* outputN = nn[1][NN_W-1];
 
 // === === ===
 
@@ -222,13 +225,31 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 
     // render neurons
 
+    // get min and max neuron values
+
+    double min =  MAXFLOAT;
+    double max = -MAXFLOAT;
+
+    for (Neuron* n : neurons) {
+        if (n == inputN || n == outputN) { continue; }
+        if (n->output < min) { min = n->output; }
+        if (n->output > max) { max = n->output; }
+    }
+
+    double range = max - min;
+
     for (int y = 0; y < NN_H; y++) {
         for (int x = 0; x < NN_W; x++) {
 
             Neuron* n = nn[y][x];
             if (!n) { continue; }
 
-            SDL_SetRenderDrawColor(renderer, 0, n->output * 255.0, 0, 0);
+            int c = (n->output - min) / range;
+
+            if      (n == inputN ) { SDL_SetRenderDrawColor(renderer, 0, n->output * 255, 0, 0); }
+            else if (n == outputN) { SDL_SetRenderDrawColor(renderer, 0, n->output * 255, 0, 0); }
+            else                   { SDL_SetRenderDrawColor(renderer, 0,         c * 255, 0, 0); }
+
             neuronVisRect.x = x * NN_RENDER_SPACING - (NN_NEURON_SIDE / 2) + offset;
             neuronVisRect.y = y * NN_RENDER_SPACING - (NN_NEURON_SIDE / 2) + offset;
             SDL_RenderFillRect(renderer, &neuronVisRect);
@@ -236,6 +257,25 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
     }
 
     // render links
+
+    min =  MAXFLOAT;
+    max = -MAXFLOAT;
+
+    // gather hidden links weights
+    for (int y = 0; y < NN_H; y++) {
+        for (int x = 1; x < NN_W-1; x++) {
+
+            Neuron* n = nn[y][x];
+            if (!n) { continue; }
+
+            for (Link* l : n->links) {
+                if (l->weight < min) { min = l->weight; }
+                if (l->weight > max) { max = l->weight; }
+            }
+        }
+    }
+
+    range = max - min;
 
     for (int y = 0; y < NN_H; y++) {
         for (int x = 0; x < NN_W; x++) {
@@ -245,13 +285,31 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 
             for (Link* l : n->links) {
 
-                SDL_SetRenderDrawColor(renderer, 0, 0, l->weight * 255.0, 0);
+                int c = (l->weight - min) / range;
 
-                SDL_RenderDrawLine(renderer, l->neurFrom->xRendCoord, l->neurFrom->yRendCoord,
-                                             l->neurTo  ->xRendCoord, l->neurTo  ->yRendCoord);
+                SDL_SetRenderDrawColor(renderer, 0, 0, c * 255, 0);
+
+                SDL_RenderDrawLine(renderer, l->neurFrom->xRendCoord, l->neurFrom->yRendCoord + 0,
+                                             l->neurTo  ->xRendCoord, l->neurTo  ->yRendCoord + 0);
+                SDL_RenderDrawLine(renderer, l->neurFrom->xRendCoord, l->neurFrom->yRendCoord + 1,
+                                             l->neurTo  ->xRendCoord, l->neurTo  ->yRendCoord + 1);
+                SDL_RenderDrawLine(renderer, l->neurFrom->xRendCoord, l->neurFrom->yRendCoord + 2,
+                                             l->neurTo  ->xRendCoord, l->neurTo  ->yRendCoord + 2);
             }
         }
     }
+}
+
+void renderFlag(int r, int g, int b, int x, int y)
+{
+    SDL_Rect rect;
+    rect.w = NN_NEURON_SIDE;
+    rect.h = NN_NEURON_SIDE;
+
+    SDL_SetRenderDrawColor(renderer, r, g, b, 0);
+    rect.x = x;
+    rect.y = y;
+    SDL_RenderFillRect(renderer, &rect);
 }
 
 // === === ===
@@ -265,15 +323,16 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 #define NUM_EXPERIMENTS     1000 // perform all experiments (values are the dataset)
 #define EXPERIMENT_VAL_STEP 0.01  // 0.0 .. 1.0
 
-#define HIDLINK_INIT_MAX 0.1
+#define HIDLINK_INIT_MIN -0.001
+#define HIDLINK_INIT_MAX  0.001
 
-#define DELTA_WEIGHT_INIT_MIN 0.0
-#define DELTA_WEIGHT_INIT_MAX 0.03
+#define DELTA_WEIGHT_INIT_MIN -0.01
+#define DELTA_WEIGHT_INIT_MAX  0.01
 
-#define NOISE_WEIGHT_MIN -0.01
-#define NOISE_WEIGHT_MAX  0.01
+#define NOISE_WEIGHT_MIN -0.005
+#define NOISE_WEIGHT_MAX  0.005
 
-#define CRITERIA 0.05
+#define CRITERIA 0.025
 
 bool trainingFinished = false;
 
@@ -305,7 +364,7 @@ void applyVecToLinkWeights(QVector<double>* v, QVector<Link*>* lnks) {
 
 int main(int argc, char *argv[])
 {
-    simLoopSleepUs = 50;// 1ms //LOOP_SLEEP_US;
+    simLoopSleepUs = 16666;// 1ms //LOOP_SLEEP_US;
     simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -332,7 +391,7 @@ int main(int argc, char *argv[])
     // initialize all link weights to 1
     for (Link* l : linksGlob) { l->weight = 1.0; }
     // initialize hidden layer links' weights to small random
-    for (Link* l : hidLinks) { l->weight = fRand(0.0, HIDLINK_INIT_MAX); }
+    for (Link* l : hidLinks) { l->weight = fRand(HIDLINK_INIT_MAX, HIDLINK_INIT_MAX); }
 
     // === gradient descent vars ===
 
@@ -367,7 +426,7 @@ int main(int argc, char *argv[])
 
             avgEpochFitnes /= NUM_EXPERIMENTS;
             double F = avgEpochFitnes; // the function to minimize
-            if (experimentNum == 0) { prevF = F + 0.000001; } // add some epsilon for the firts epoch
+            if (experimentNum == 0) { prevF = F + 0.000001; } // add some epsilon for the first epoch
 
             // === === ===
             // update link weights using gradient descent
@@ -392,7 +451,7 @@ int main(int argc, char *argv[])
             applyVecToLinkWeights(&weights, &hidLinks);
 
             // === === ===
-            qDebug() << epochNum << "| EPOCH RESULTS" << avgEpochFitnes << hidLinks[0]->weight;
+            qDebug() << epochNum << "| EPOCH RESULTS" << avgEpochFitnes;// << hidLinks[0]->weight;
 
             if (avgEpochFitnes <= CRITERIA) { trainingFinished = true; }
 
@@ -405,7 +464,7 @@ int main(int argc, char *argv[])
         double desiredOutput =           experimentNum / (double)NUM_EXPERIMENTS;
         double      nnOutput = computeNN(experimentNum / (double)NUM_EXPERIMENTS);
 
-        qDebug() << desiredOutput << nnOutput;
+        if (trainingFinished) { qDebug() << desiredOutput << nnOutput; }
 
         double FTN = abs(nnOutput - desiredOutput);
 
@@ -422,6 +481,9 @@ int main(int argc, char *argv[])
 
         renderNN(nn, NN_RENDER_OFFSET);
 
+        // render flag training finished
+        renderFlag(0, trainingFinished ? 255 : 0, 0, 20, 60);
+
         // render screen border
         SDL_SetRenderDrawColor(renderer, 0, 255, 0, 0);
         SDL_Rect wborderRect;
@@ -431,9 +493,13 @@ int main(int argc, char *argv[])
         wborderRect.h = W_H-1;
         SDL_RenderDrawRect(renderer, &wborderRect);
 
+        //if (trainingFinished) { SDL_RenderPresent(renderer); }
         SDL_RenderPresent(renderer);
 
-        std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
+        if (!trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(100)); }
+        if (trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs)); }
+
+        //if (trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs)); }
 
         frameNum++;
     }
