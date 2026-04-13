@@ -75,7 +75,7 @@ void processInputMainNN()
 // === NN ===
 
 #define NN_H 3
-#define NN_W 4
+#define NN_W 3
 
 #define NN_NEURON_SIDE 20
 #define NN_RENDER_SPACING 40
@@ -161,15 +161,23 @@ struct Neuron
     }
 };
 
-Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },
-                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},
-                          {                      0, new Neuron(), new Neuron(), 0                     },};
+//Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },
+//                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},
+//                          {                      0, new Neuron(), new Neuron(), 0                     },};
+
+// --------------------------------------------------------------------------------------------
+//                                       in    -->      n    -->     out                     //
+Neuron* nn[NN_H][NN_W] = {{                      0,            0,                       },   //
+                          { /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},   //
+                          {                      0,            0,                       },}; //
+// --------------------------------------------------------------------------------------------
 
 QVector<Neuron*> neurons;
 QVector<Link*> linksGlob;
+QVector<Link*> hidLinks;
 
 Neuron* inputN  = nn[1][0];
-Neuron* outputN = nn[1][3];
+Neuron* outputN = nn[1][2];
 
 // === === ===
 
@@ -198,6 +206,9 @@ void initNNLinks()
                 Link* lnk = new Link(nPrev, nCur, 0.0);
                 nCur->links.append(lnk);
                 linksGlob.append(lnk);
+
+                // link is connected to hidden layer
+                if (x != 0 && x != (NN_W-1)) { hidLinks.append(lnk); }
             }
         }
     }
@@ -245,149 +256,55 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 
 // === === ===
 
-// training method : random weights
+// training method : gradient descent
 
 // fittness function : input == output * 0.5
 
-// 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
+// EPOCH : generate weights, perform all experiments, calculate average fitness, report results
 
-#define NUM_EPOCHS          1000  // generate weights
-#define NUM_EXPERIMENTS     10  // perform all experiments (values are the dataset)
+#define NUM_EXPERIMENTS     1000 // perform all experiments (values are the dataset)
 #define EXPERIMENT_VAL_STEP 0.01  // 0.0 .. 1.0
 
-#define BEST_CRITERIA   0.02 // abs(in-out) average difference per epoch
+#define HIDLINK_INIT_MAX 0.1
 
-#define BST_SHOW_US 250000
+#define DELTA_WEIGHT_INIT_MIN 0.0
+#define DELTA_WEIGHT_INIT_MAX 0.03
+
+#define NOISE_WEIGHT_MIN -0.01
+#define NOISE_WEIGHT_MAX  0.01
+
+#define CRITERIA 0.05
+
+bool trainingFinished = false;
+
+// /* no finishing for now */ #define BEST_CRITERIA   0.01 // abs(in-out) average difference per epoch
 
 int epochNum = 0;
 int experimentNum = 0;
 double avgEpochFitnes = 0.0;
-double minFTN = MAXFLOAT;
-int numBest = 0;
-bool showNewBest = false;
-bool trainingFinished = false;
 
-QVector<Neuron*> trainedNeurons;
-QVector<Link*> trainedLinks;
-
-Neuron* trainedInputN  = nullptr;
-Neuron* trainedOutputN = nullptr;
-
-void experiment(double in, double out)
+double computeNN(double in)
 {
     for (Neuron* n : neurons) { n->signalCalculated = false; }
-
     inputN->setSignal(in);
-    double NNval = outputN->Signal();
-
-    double FTN = abs(NNval - out);
-    avgEpochFitnes += FTN;
-
-    if (FTN <= BEST_CRITERIA) {
-        numBest++;
-    }
+    return outputN->Signal();
 }
 
-double calcOut(double in)
-{
-    for (Neuron* n : trainedNeurons) { n->signalCalculated = false; }
-    trainedInputN->setSignal(in);
-    return trainedOutputN->Signal();
+void initNDimVecRandom(QVector<double>* v, double min, double max) { for (int i = 0; i < v->size(); i++) { (*v)[i] = fRand(min, max); } }
+void addNDimVecVal    (QVector<double>* v, double val            ) { for (int i = 0; i < v->size(); i++) { (*v)[i] += val;            } }
+void mulNDimVecVal    (QVector<double>* v, double val            ) { for (int i = 0; i < v->size(); i++) { (*v)[i] *= val;            } }
+void addNDimVecVec    (QVector<double>* a, QVector<double>* b    ) { for (int i = 0; i < a->size(); i++) { (*a)[i] += (*b)[i];        } }
+
+void applyLinkWeightsToVec(QVector<Link*>* lnks, QVector<double>* v) {
+    int i = 0; for (Link* l : *lnks) { (*v)[i] = l->weight; i++; }
+}
+
+void applyVecToLinkWeights(QVector<double>* v, QVector<Link*>* lnks) {
+    int i = 0; for (Link* l : *lnks) { l->weight = (*v)[i]; i++; }
 }
 
 int main(int argc, char *argv[])
 {
-    // === gradient minimum search ===
-
-    // f = x^2 + y^2
-
-    double f;
-    double fp;
-
-    Vec2 v(-1000, 100);
-    Vec2 dv(fRand(-0.3, 0.3), fRand(-0.3, 0.3)); // dir
-    Vec2 tv(0, 0);
-
-    double dfPrev = 1;
-
-    bool s1 = false;
-    bool s2 = false;
-    bool s3 = false;
-
-    int steps = 0;
-
-    while (1) {
-
-        steps++;
-
-        fp = v.x*v.x + v.y*v.y;
-        tv = addVec(v, dv);
-        f  = tv.x*tv.x + tv.y*tv.y;
-
-        double df = f - fp;
-
-        qDebug() << steps << "|" << f << "|" << df << "|" << (int)abs(df / dfPrev * 100.0) << "|" << ( QString("{%1,%2}").arg(v.x).arg(v.y) );
-        dfPrev = df;
-
-        dv = (df > 0 /*growth*/) ? mulVecScalar(-1.0, dv) : dv;
-        dv = addVec(dv, Vec2(fRand(-0.01, 0.01), fRand(-0.01, 0.01))); // divert from straight line a bit, might use the crossProduct actually (?)
-
-        s1 = s2;
-        s2 = s3;
-        s3 = df > 0;
-
-        if (s1 == s3 && s1 != s2) { // we're roaming between some 2 values
-            dv = mulVecScalar(0.5, dv); // decrease step
-        }
-
-        v = addVec(v, dv);
-
-        if (abs(f) < 0.01) { return 0; }
-
-        //std::this_thread::sleep_for(std::chrono::milliseconds(25));
-    }
-
-    // === === ===
-
-    // y = x^2
-    // start : x = -10
-    // find y global minimum
-
-    double xprev;
-    double x = 10.0;
-    double step = 0.01;
-    double yprev;
-    double y;
-
-    double criteria = 0.01;
-
-    double prevDeltaY = 0;
-
-    y = x*x;
-    yprev = y;
-
-    while (true)
-    {
-        yprev = x*x;
-        x+= step;
-        y = x*x;
-
-        if (y > yprev) {
-            step = -step;
-        }
-
-        double deltaY = abs(y-yprev);
-        if (deltaY > prevDeltaY) { step *= 0.5; }
-        prevDeltaY = deltaY;
-
-        qDebug() << step << "|"<< x << "|" << y;
-
-        if (deltaY <= criteria) { break; }
-    }
-
-    return 0;
-    // === === ===
-
     simLoopSleepUs = 50;// 1ms //LOOP_SLEEP_US;
     simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
@@ -412,8 +329,23 @@ int main(int argc, char *argv[])
     inputN ->isInput  = true;
     outputN->isOutput = true;
 
-    // generate random weights
-    for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
+    // initialize all link weights to 1
+    for (Link* l : linksGlob) { l->weight = 1.0; }
+    // initialize hidden layer links' weights to small random
+    for (Link* l : hidLinks) { l->weight = fRand(0.0, HIDLINK_INIT_MAX); }
+
+    // === gradient descent vars ===
+
+    QVector<double> weights = QVector<double>(hidLinks.size());
+    applyLinkWeightsToVec(&hidLinks, &weights);
+
+    double prevF = 0.0; // prev verageEpochFitness (the function to minimize)
+    QVector<double> dw = QVector<double>(hidLinks.size()); // delta weights
+    initNDimVecRandom(&dw, DELTA_WEIGHT_INIT_MIN, DELTA_WEIGHT_INIT_MAX);
+
+    bool s1 = false; // last 3 results sign, used to refine the stepping during descent
+    bool s2 = false; // last 3 results sign, used to refine the stepping during descent
+    bool s3 = false; // last 3 results sign, used to refine the stepping during descent
 
     while (running) {
 
@@ -426,70 +358,60 @@ int main(int argc, char *argv[])
 // ============================= train the NN ===========================================
 // ======================================================================================
 
-        if (trainingFinished) { goto lblTrainingFinished; }
+        // generate weights, perform all experiments, calculate average fitness, report results
 
-        // 0..NUM_EPOCHS : generate weights, perform all experiments, calculate average fitness, report results
+        // check epoch finished
 
-        if (experimentNum > NUM_EXPERIMENTS) { // next epoch
+        if (!trainingFinished && experimentNum >= NUM_EXPERIMENTS) {
+            experimentNum = 0;
 
             avgEpochFitnes /= NUM_EXPERIMENTS;
+            double F = avgEpochFitnes; // the function to minimize
+            if (experimentNum == 0) { prevF = F + 0.000001; } // add some epsilon for the firts epoch
 
-            if (/*avgEpochFitnes <= BEST_CRITERIA && avgEpochFitnes < minFTN*/ numBest >= (int)(NUM_EXPERIMENTS * (1.0 - BEST_CRITERIA))) {
-                minFTN = avgEpochFitnes;
-                numBest = 0;
+            // === === ===
+            // update link weights using gradient descent
 
-                qDeleteAll(trainedNeurons); trainedNeurons.clear();
-                qDeleteAll(trainedLinks  ); trainedLinks  .clear();
-                for (Neuron* n : neurons) { trainedNeurons.append(new Neuron(*n)); }
-                for (Link* l : linksGlob) { trainedLinks  .append(new Link  (*l)); }
+            double dF = F - prevF;
 
-                // neuron --> links, io
+            if (dF > 0) { mulNDimVecVal(&dw, -1.0); } // change delta direction to opposite if the F has increased
 
-                for (Neuron* n : trainedNeurons) {
-                    if (n->isInput ) { trainedInputN  = n; }
-                    if (n->isOutput) { trainedOutputN = n; }
-                }
+            QVector<double> noise = QVector<double>(hidLinks.size());
+            initNDimVecRandom(&noise, NOISE_WEIGHT_MIN, NOISE_WEIGHT_MAX);
+            addNDimVecVec(&dw, &noise);
 
-                for (Link* l : trainedLinks) {
+            s1 = s2;
+            s2 = s3;
+            s3 = dF > 0;
 
-                    for (Neuron* n : trainedNeurons) {
-
-                        if (l->neurFrom->xid == n->xid &&
-                            l->neurFrom->yid == n->yid) {
-                            l->neurFrom = n;
-                        }
-
-                        if (l->neurTo  ->xid == n->xid &&
-                            l->neurTo  ->yid == n->yid) {
-                            l->neurTo   = n;
-                        }
-
-                    }
-                }
-
-                showNewBest = true;
+            if (s1 == s3 && s1 != s2) { // we're roaming between some 2 values around the desired minimum
+                mulNDimVecVal(&dw, 0.5); // decrease step
             }
 
-            qDebug() << "EPCH" << epochNum << "FTN" << avgEpochFitnes << "BST" << minFTN;
+            addNDimVecVec(&weights, &dw);
+            applyVecToLinkWeights(&weights, &hidLinks);
+
+            // === === ===
+            qDebug() << epochNum << "| EPOCH RESULTS" << avgEpochFitnes << hidLinks[0]->weight;
+
+            if (avgEpochFitnes <= CRITERIA) { trainingFinished = true; }
 
             avgEpochFitnes = 0.0;
-            experimentNum = 0;
             epochNum++;
-            // generate random weights
-            for (Link* l : linksGlob) { l->weight = fRand(0.0, 1.0); }
         }
 
-        if (epochNum > NUM_EPOCHS) {
-            // --> file
-            trainingFinished = true;
-            goto lblTrainingFinished;
-        }
+        if (trainingFinished && experimentNum >= NUM_EXPERIMENTS) { experimentNum = 0; }
 
-        experiment(experimentNum / (double)NUM_EXPERIMENTS, experimentNum / (double)NUM_EXPERIMENTS * 0.5);
+        double desiredOutput =           experimentNum / (double)NUM_EXPERIMENTS;
+        double      nnOutput = computeNN(experimentNum / (double)NUM_EXPERIMENTS);
+
+        qDebug() << desiredOutput << nnOutput;
+
+        double FTN = abs(nnOutput - desiredOutput);
+
+        avgEpochFitnes += FTN;
 
         experimentNum++;
-
-        lblTrainingFinished:
 
 // ======================================================================================
 // ======================================================================================
@@ -511,40 +433,7 @@ int main(int argc, char *argv[])
 
         SDL_RenderPresent(renderer);
 
-        if (showNewBest) {
-            showNewBest = false;
-            //std::this_thread::sleep_for(std::chrono::microseconds(BST_SHOW_US));
-            qDebug() << "NEW BEST";
-            qDebug() << "==========================================================";
-            qDebug() << "==========================================================";
-
-            // save the best solution
-
-            for (Neuron* n : neurons) {
-                QString io = n->isInput ? "I" : (n->isOutput ? "O" : "");
-                qDebug() << "ID" << n->yid << n->xid << "IO" << io;
-            }
-
-            for (Link* l : linksGlob) {
-                QString s = QString("([%1][%2]) --> ([%3][%4]) | W %5").arg(l->neurFrom->yid)
-                                                                      .arg(l->neurFrom->xid)
-                                                                      .arg(l->neurTo  ->yid)
-                                                                      .arg(l->neurTo  ->xid)
-                                                                      .arg(l->weight);
-
-                qDebug() << s;
-            }
-
-            qDebug() << "==========================================================";
-            qDebug() << "==========================================================";
-        }
         std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
-
-        if (trainingFinished) {
-            double inVal  = fRand(0, 1);
-            double outVal = calcOut(inVal);
-            qDebug() << inVal << outVal << (abs(inVal - outVal));
-        }
 
         frameNum++;
     }
