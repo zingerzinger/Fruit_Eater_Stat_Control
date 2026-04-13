@@ -142,8 +142,8 @@ struct Neuron
              out += link->neurFrom->Signal() * link->weight;
          }
 
-         if (out <       ACTIVATION_THRESHOLD) { out = 0.0; }
-         if (out > 1.0 - ACTIVATION_THRESHOLD) { out = 1.0; }
+//         if (out <       ACTIVATION_THRESHOLD) { out = 0.0; }
+//         if (out > 1.0 - ACTIVATION_THRESHOLD) { out = 1.0; }
 
          signalCalculated = true;
          output = out;
