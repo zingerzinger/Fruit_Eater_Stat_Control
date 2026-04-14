@@ -159,27 +159,28 @@ struct Neuron
 };
 
 #define NN_H 3
-#define NN_W 4
+#define NN_W 3
 
-// ---------------------------------------------------------------------------------------------------------
-//                                       in    -->      n    -->      n    -->     out                    //
-Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },  //
-                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},  //
-                          {                      0, new Neuron(), new Neuron(), 0                     },};//
-// -------------------------------------------------------------------------------------------------------//
+//// ---------------------------------------------------------------------------------------------------------
+////                                       in    -->      n    -->      n    -->     out                    //
+//Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(), new Neuron(), 0                     },  //
+//                          { /* --> */ new Neuron(), new Neuron(), new Neuron(), new Neuron() /* --> */},  //
+//                          {                      0, new Neuron(), new Neuron(), 0                     },};//
+//// -------------------------------------------------------------------------------------------------------//
 
-//// --------------------------------------------------------------------------------------------
-////                                       in    -->      n    -->     out                     //
-//Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(),                       },   //
-//                          { /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},   //
-//                          {                      0, new Neuron(),                       },}; //
-//// --------------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------------
+//                                       in    -->      n    -->     out                     //
+Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(),                       },   //
+                          { /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},   //
+                          {                      0, new Neuron(),                       },}; //
+// --------------------------------------------------------------------------------------------
 
 QVector<Neuron*> neurons;
 QVector<Link*> linksGlob;
 QVector<Link*> hidLinks;
 
 QVector<QVector<Link*>> hidLinkLayers; // input lyer <-- output layer
+QVector<QVector<double>> hidLinkLayersDW; // input lyer <-- output layer
 
 Neuron* inputN  = nn[1][   0  ];
 Neuron* outputN = nn[1][NN_W-1];
@@ -221,6 +222,7 @@ void initNNLinks()
     for (int x = 0; x < NN_W; x++) {
 
         QVector<Link*> layerLinks;
+        QVector<double> layerLinksDW;
 
         for (int y = 0; y < NN_H; y++) {
 
@@ -229,10 +231,16 @@ void initNNLinks()
             if (!n) { continue; }
 
             layerLinks.append(n->links);
+            for (Link* l : n->links) { layerLinksDW.append(0); }
         }
 
-        if (!layerLinks.empty()) { hidLinkLayers.append(layerLinks); }
+        if (!layerLinks.empty()) {
+            hidLinkLayers.append(layerLinks);
+            hidLinkLayersDW.append(layerLinksDW);
+        }
+
         layerLinks.clear();
+        layerLinksDW.clear();
     }
 
     std::reverse(hidLinkLayers.begin(), hidLinkLayers.end());
@@ -344,14 +352,14 @@ void renderFlag(int r, int g, int b, int x, int y)
 #define NUM_EXPERIMENTS     1000 // perform all experiments (values are the dataset)
 #define EXPERIMENT_VAL_STEP 0.01  // 0.0 .. 1.0
 
-#define HIDLINK_INIT_MIN -0.3
-#define HIDLINK_INIT_MAX  0.3
+#define HIDLINK_INIT_MIN -0.1
+#define HIDLINK_INIT_MAX  0.1
 
-#define DELTA_WEIGHT_INIT_MIN -0.01
-#define DELTA_WEIGHT_INIT_MAX  0.01
+#define DELTA_WEIGHT_INIT_MIN -0.1
+#define DELTA_WEIGHT_INIT_MAX  0.1
 
-#define NOISE_WEIGHT_MIN -0.005
-#define NOISE_WEIGHT_MAX  0.005
+#define NOISE_WEIGHT_MIN -0.01
+#define NOISE_WEIGHT_MAX  0.01
 
 #define CRITERIA 0.025
 
@@ -383,6 +391,10 @@ void applyVecToLinkWeights(QVector<double>* v, QVector<Link*>* lnks) {
     int i = 0; for (Link* l : *lnks) { l->weight = (*v)[i]; i++; }
 }
 
+void addDWToLinkWeights(QVector<double>* v, QVector<Link*>* lnks) {
+    int i = 0; for (Link* l : *lnks) { l->weight += (*v)[i]; i++; }
+}
+
 int main(int argc, char *argv[])
 {
     simLoopSleepUs = 16666;// 1ms //LOOP_SLEEP_US;
@@ -410,9 +422,9 @@ int main(int argc, char *argv[])
     outputN->isOutput = true;
 
     // initialize all link weights to 1
-    for (Link* l : linksGlob) { l->weight = fRand(HIDLINK_INIT_MAX, HIDLINK_INIT_MAX); }
+    for (Link* l : linksGlob) { l->weight = 1.0; }
     // initialize hidden layer links' weights to small random
-//    for (Link* l : hidLinks) { l->weight = fRand(HIDLINK_INIT_MAX, HIDLINK_INIT_MAX); }
+    for (Link* l : hidLinks) { l->weight = fRand(HIDLINK_INIT_MAX, HIDLINK_INIT_MAX); }
 
     // === gradient descent vars ===
 
@@ -421,13 +433,16 @@ int main(int argc, char *argv[])
     QVector<double> weights = QVector<double>(hidLinkLayers[layerIdx].size());
     applyLinkWeightsToVec(&(hidLinkLayers[layerIdx]), &weights);
 
-    double prevF = 0.0; // prev verageEpochFitness (the function to minimize)
-    QVector<double> dw = QVector<double>(hidLinkLayers[layerIdx].size()); // delta weights
-    initNDimVecRandom(&dw, DELTA_WEIGHT_INIT_MIN, DELTA_WEIGHT_INIT_MAX);
+ //   double prevF = 0.0; // prev verageEpochFitness (the function to minimize)
+//    QVector<double> dw = QVector<double>(hidLinkLayers[layerIdx].size()); // delta weights
+    initNDimVecRandom(&(hidLinkLayersDW[layerIdx]), DELTA_WEIGHT_INIT_MIN, DELTA_WEIGHT_INIT_MAX);
 
     bool s1 = false; // last 3 results sign, used to refine the stepping during descent
     bool s2 = false; // last 3 results sign, used to refine the stepping during descent
     bool s3 = false; // last 3 results sign, used to refine the stepping during descent
+
+    double F = 0;
+    double prevF = 0.01;
 
     while (running) {
 
@@ -442,59 +457,63 @@ int main(int argc, char *argv[])
 
         // generate weights, perform all experiments, calculate average fitness, report results
 
-        // check epoch finished
+        if (layerIdx >= hidLinkLayers.size()) { // loop layers training
+            layerIdx = 0;
 
-        if (!trainingFinished && experimentNum >= NUM_EXPERIMENTS) {
-            experimentNum = 0;
+            experimentNum++;
 
-            avgEpochFitnes /= NUM_EXPERIMENTS;
-            double F = avgEpochFitnes; // the function to minimize
-            if (experimentNum == 0) { prevF = F + 0.000001; } // add some epsilon for the first epoch
+            if (!trainingFinished && experimentNum >= NUM_EXPERIMENTS) {
 
-            // === === ===
-            // update link weights using gradient descent
+                experimentNum = 0;
+                avgEpochFitnes /= (NUM_EXPERIMENTS * hidLinkLayers.size());
 
-            double dF = F - prevF;
+                qDebug() << epochNum << "| EPOCH RESULTS" << avgEpochFitnes;
 
-            dw = QVector<double>(hidLinkLayers[layerIdx].size()); // delta weights
+                prevF = F;
+                F = avgEpochFitnes; // the function to minimize
 
-            if (dF > 0) { mulNDimVecVal(&dw, -1.0); } // change delta direction to opposite if the F has increased
+                epochNum++;
 
-            QVector<double> noise = QVector<double>(hidLinks.size());
-            initNDimVecRandom(&noise, NOISE_WEIGHT_MIN, NOISE_WEIGHT_MAX);
-            addNDimVecVec(&dw, &noise);
-
-            s1 = s2;
-            s2 = s3;
-            s3 = dF > 0;
-
-            if (s1 == s3 && s1 != s2) { // we're roaming between some 2 values around the desired minimum
-                mulNDimVecVal(&dw, 0.5); // decrease step
+                //if (avgEpochFitnes <= CRITERIA) { trainingFinished = true; }
             }
 
-            // update weight vector according to layer links size
-            weights = QVector<double>(hidLinkLayers[layerIdx].size());
-            applyLinkWeightsToVec(&(hidLinkLayers[layerIdx]), &weights);
-
-            addNDimVecVec(&weights, &dw);
-            applyVecToLinkWeights(&weights, &(hidLinkLayers[layerIdx]));
-
-            // === === ===
-            qDebug() << epochNum << "| EPOCH RESULTS" << avgEpochFitnes;// << hidLinks[0]->weight;
-
-            if (avgEpochFitnes <= CRITERIA) { trainingFinished = true; }
-
-            layerIdx++; if (layerIdx >= hidLinkLayers.size()) { layerIdx = 0; } // loop layers training
-
-            // update dw for next layer
-            //QVector<double> dw = QVector<double>(hidLinkLayers[layerIdx].size()); // delta weights
-            //initNDimVecRandom(&dw, DELTA_WEIGHT_INIT_MIN, DELTA_WEIGHT_INIT_MAX);
-
-            avgEpochFitnes = 0.0;
-            epochNum++;
         }
 
-        if (trainingFinished && experimentNum >= NUM_EXPERIMENTS) { experimentNum = 0; }
+
+
+        if (experimentNum == 0) {
+            prevF = 0.1;
+            avgEpochFitnes = 0;
+        } // add some epsilon for the first epoch
+
+        // === === ===
+        // update link weights using gradient descent
+
+        double dF = F - prevF;
+
+        // !!!USE THE DW FOR THAT LAYER!!!
+        //dw = QVector<double>(hidLinkLayers[layerIdx].size()); // delta weights
+
+        //if (dF > 0) { mulNDimVecVal(&(hidLinkLayersDW[layerIdx]), -1); } // change delta direction to opposite if the F has increased
+
+        mulNDimVecVal(&(hidLinkLayersDW[layerIdx]), -1); // change delta direction to opposite if the F has increased
+
+        QVector<double> noise = QVector<double>(hidLinks.size());
+        initNDimVecRandom(&noise, NOISE_WEIGHT_MIN, NOISE_WEIGHT_MAX);
+        addNDimVecVec(&(hidLinkLayersDW[layerIdx]), &noise);
+
+        s1 = s2;
+        s2 = s3;
+        s3 = dF > 0;
+
+        if (s1 == s3 && s1 != s2) { // we're roaming between some 2 values around the desired minimum
+            mulNDimVecVal(&(hidLinkLayersDW[layerIdx]), 0.5); // decrease step
+        }
+
+        // layerLinks + dW
+        addDWToLinkWeights(&(hidLinkLayersDW[layerIdx]), &(hidLinkLayers[layerIdx]));
+
+        // === === ===
 
         double desiredOutput =           experimentNum / (double)NUM_EXPERIMENTS;
         double      nnOutput = computeNN(experimentNum / (double)NUM_EXPERIMENTS);
@@ -505,7 +524,7 @@ int main(int argc, char *argv[])
 
         avgEpochFitnes += FTN;
 
-        experimentNum++;
+        layerIdx++;
 
 // ======================================================================================
 // ======================================================================================
@@ -531,7 +550,7 @@ int main(int argc, char *argv[])
         //if (trainingFinished) { SDL_RenderPresent(renderer); }
         SDL_RenderPresent(renderer);
 
-        if (!trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(10)); }
+//        if (!trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(10)); }
         if (trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs)); }
 
         //if (trainingFinished) { std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs)); }
