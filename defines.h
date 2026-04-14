@@ -1,8 +1,8 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#define W_W 640
-#define W_H 480
+#define W_W 1280
+#define W_H 1024
 
 #define LOOP_SLEEP_US (1000000 / 60)
 #define SIM_DT (1.0 / 60.0)
