@@ -6,7 +6,6 @@ CONFIG -= app_bundle
 DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
-        main.cpp \
         mainNN.cpp
 
 # Default rules for deployment.
@@ -19,7 +18,5 @@ INCLUDEPATH += $$PWD/../../../../../../usr/include/SDL2
 LIBS += -L/usr/lib -lSDL2 -lSDL2_ttf
 
 HEADERS += \
-    creature.h \
     defines.h \
-    sim.h \
     utils.h
