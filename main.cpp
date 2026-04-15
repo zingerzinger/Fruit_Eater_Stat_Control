@@ -82,11 +82,14 @@ struct Neuron;
 
 struct Link
 {
-    Link(Neuron* neuronFrom, Neuron* neuronTo)
+    Link(Neuron* neuronFrom, Neuron* neuronTo, double weight)
     {
+        this->weight = weight;
         this->neurFrom = neuronFrom;
         this->neurTo   = neuronTo;
     }
+
+    double weight;
 
     Neuron* neurFrom;
     Neuron* neurTo;
@@ -96,12 +99,20 @@ struct Link
 
 #define TAN_ONE (1 / 1.5575)
 
+#define NUM_EXPERIMENTS     1000 // perform all experiments (values are the dataset)
+
+#define INIT_WEIGHT_MIN -0.1
+#define INIT_WEIGHT_MAX  0.1
+
+#define WEIGHT_DELTA_NOISE_MIN -0.01
+#define WEIGHT_DELTA_NOISE_MAX  0.01
+
+bool trainingFinished = false;
+
 struct Neuron
 {
     bool outputCalculated = false;
     double output = 0;
-
-    double weight;
 
     int xRendCoord;
     int yRendCoord;
@@ -122,7 +133,7 @@ struct Neuron
          double out = 0;
 
          for (Link* link : linksIn) {
-             out += link->neurFrom->getOutputForward();
+             out += link->neurFrom->getOutputForward() * link->weight;
          }
 
          outputCalculated = true;
@@ -138,7 +149,7 @@ struct Neuron
          double out = 0;
 
          for (Link* link : linksOut) {
-             out += link->neurFrom->getOutputBackward();
+             out += link->neurTo->getOutputBackward() * link->weight;
          }
 
          outputCalculated = true;
@@ -148,7 +159,34 @@ struct Neuron
 
     double activate(double val) {
         // sigmoid : 1 / (1 + e^-x)
-        return 1.0 / (1.0 + pow(M_E, -val)) * weight;
+        return 1.0 / (1.0 + pow(M_E, -val));
+    }
+
+    double derivative(double val) {
+        return val * (1.0 - val);
+    }
+
+//    void updateInLinkWeights(double error) {
+//        double totalLinksInWeight = 0.0;
+//        double min =  MAXFLOAT;
+//        double max = -MAXFLOAT;
+//
+//        for (Link* l : linksIn) {
+//            if (l->weight < min) { min = l->weight; }
+//            if (l->weight > max) { max = l->weight; }
+//        }
+//
+//        for (Link* l : linksIn) {
+//            double k = (l->weight - min) / (max - min);
+//            if (linksIn.size() == 1) { k = 1.0; }
+//            l->weight += error * k + fRand(WEIGHT_DELTA_NOISE_MIN, WEIGHT_DELTA_NOISE_MAX);
+//        }
+//    }
+
+    void updateInLinkWeights(double error) {
+        for (Link* l : linksIn) {
+            l->weight += derivative(error) + fRand(WEIGHT_DELTA_NOISE_MIN, WEIGHT_DELTA_NOISE_MAX);
+        }
     }
 
     double propagateError() {
@@ -162,9 +200,9 @@ struct Neuron
     }
 
     void print() {
-        qDebug() << ( QString("[%1][%2] | W %3").arg(yid)
-                                                .arg(xid)
-                                                .arg(weight));
+        qDebug() << ( QString("[%1][%2] | %3").arg(yid)
+                                              .arg(xid)
+                                              .arg(output));
     }
 
     void printLinksIn () { for (Link* l : linksIn ) { l->print(); } }
@@ -172,26 +210,27 @@ struct Neuron
 };
 
 void Link::print() {
-    qDebug() << ( QString("[%1][%2] --> [%3][%4]").arg(neurFrom->yid)
-                                                  .arg(neurFrom->xid)
-                                                  .arg(neurTo  ->yid)
-                                                  .arg(neurTo  ->xid));
+    qDebug() << ( QString("[%1][%2] --> [%3][%4] | %5").arg(neurFrom->yid)
+                                                       .arg(neurFrom->xid)
+                                                       .arg(neurTo  ->yid)
+                                                       .arg(neurTo  ->xid)
+                                                       .arg(weight));
 }
 
-#define NN_H 1
+#define NN_H 3
 #define NN_W 3
 
-// ------------------------------------------------------------------------------------------//
-//                                       in    -->      n    --     out                      //
-Neuron* nn[NN_H][NN_W] = {{ /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},}; //
-// ------------------------------------------------------------------------------------------//
+//// ------------------------------------------------------------------------------------------//
+////                                       in    -->      n    --     out                      //
+//Neuron* nn[NN_H][NN_W] = {{ /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},}; //
+//// ------------------------------------------------------------------------------------------//
 
-//// --------------------------------------------------------------------------------------------
-////                                       in    -->      n    -->     out                     //
-//Neuron* nn[NN_H][NN_W] = {{                      0, new Neuron(),                       },   //
-//                          { /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},   //
-//                          {                      0, new Neuron(),                       },}; //
-//// --------------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------------
+//                                       in    -->      n    -->     out                     //
+Neuron* nn[NN_H][NN_W] = {{ /* --> */ new Neuron(), new Neuron(), new Neuron() /* --> */},   //
+                          {                      0, new Neuron(),                      0},   //
+                          {                      0, new Neuron(),                      0},}; //
+// --------------------------------------------------------------------------------------------
 
 QVector<QVector<Neuron*>> layersFwd;
 QVector<QVector<Neuron*>> layersBck;
@@ -212,6 +251,7 @@ void printLayer(int id)
 
 void initNN()
 {
+    // init neurons
     for (int y = 0; y < NN_H; y++) {        
         for (int x = 0; x < NN_W; x++) {
 
@@ -228,22 +268,14 @@ void initNN()
 
             for (int line = 0; line < NN_H; line++) {
 
-                // get L-->R links
+                // init linksIn (input --> output)
                 if (x != 0) {
                    Neuron* nPrev = nn[line][x-1];
                    if (nPrev) {
-                       Link* lnk = new Link(nPrev, nCur);
-                       nCur->linksIn.append(lnk);
+                       Link* lnk = new Link(nPrev, nCur, 0.0);
+                       nCur ->linksIn .append(lnk);
+                       nPrev->linksOut.append(lnk);
                        links.append(lnk);
-                   }
-                }
-
-                // get L<--R links
-                if (x != NN_W-1) {
-                   Neuron* nNext = nn[line][x+1];
-                   if (nNext) {
-                       Link* lnk = new Link(nNext, nCur);
-                       nCur->linksOut.append(lnk);
                    }
                 }
             }
@@ -312,11 +344,11 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
     min =  MAXFLOAT;
     max = -MAXFLOAT;
 
-    // gather neuron weights
+    // gather link weights
 
-    for (Neuron* n : neurons) {
-        if (n->weight < min) { min = n->weight; }
-        if (n->weight > max) { max = n->weight; }
+    for (Link* l : links) {
+        if (l->weight < min) { min = l->weight; }
+        if (l->weight > max) { max = l->weight; }
     }
 
     range = max - min;
@@ -325,7 +357,7 @@ void renderNN(Neuron* nn[NN_H][NN_W], int offset)
 
         for (Link* l : n->linksIn) {
 
-            int c = (l->neurFrom->weight - min) / range;
+            int c = (l->weight - min) / range;
 
             SDL_SetRenderDrawColor(renderer, 0, 0, c * 255, 0);
 
@@ -355,27 +387,16 @@ void renderFlag(int r, int g, int b, int x, int y)
 
 // === === ===
 
-#define NUM_EXPERIMENTS     1000 // perform all experiments (values are the dataset)
-
-#define INIT_WEIGHT_MIN -0.1
-#define INIT_WEIGHT_MAX  0.1
-
-bool trainingFinished = false;
+void initWeights(double val)
+{
+    for (Link* l : links) { l->weight = val; }
+}
 
 void initWeightsRandom()
 {
-    for (Neuron* n : neurons) {
-        if (n == inputN || n == outputN) { continue; }
-        n->weight = fRand(INIT_WEIGHT_MIN, INIT_WEIGHT_MAX);
+    for (Link* l : links) {
+         l->weight = fRand(INIT_WEIGHT_MIN, INIT_WEIGHT_MAX);
     }
-
-     inputN->weight = 1.0;
-    outputN->weight = 1.0;
-}
-
-void initWeights(double val)
-{
-    for (Neuron* n : neurons) { n->weight = val; }
 }
 
 void resetNN()
@@ -414,9 +435,99 @@ void computeLayerBackward(int id)
 //    return inputN->getOutputBackward();
 //}
 
+// find minimum (function roots) numerically
+
+#define GRAD_STEP 0.00001
+#define NUM_STEPS 1000
+
+#define DESCENT_EPSILON 0.001
+
+double f(QVector<double> x)
+{
+    return x[0]*x[0] + x[1]*x[1];
+}
+
+QVector<double> grad(QVector<double> x) {
+
+    QVector<double> result;
+
+    for (int i = 0; i < x.size(); i++) {
+        QVector<double> tplus = x;
+        QVector<double> tmins = x;
+
+        tplus[i] += GRAD_STEP;
+        tmins[i] -= GRAD_STEP;
+
+        double g = f(tplus) - f(tmins);
+
+        g /= 2 * GRAD_STEP;
+
+        result.append(g); ;
+    }
+
+    // compute unit vector
+    double vlen = 0.0;
+    for (double v : result) { vlen += v*v; }
+    double invLen = 1.0 / sqrt(vlen);
+    for (int i = 0; i < result.size(); i++) { result[i] = result[i] * invLen; }
+    return result;
+}
+
+void grad()
+{
+    // f = x^2 + y^2
+
+    double x = 1;
+    double y = 1;
+
+    QVector<double> grd = grad(QVector<double>({x,y}));
+
+    double gx = grd[0];
+    double gy = grd[1];
+
+    qDebug() << gx << gy;
+
+    double s1;
+    double s2;
+    double s3;
+
+    s1 = s2 = s3 = 0;
+
+    while (1) {
+
+        double func = f(QVector<double>({x,y}));
+
+        s1 = s2;
+        s2 = s3;
+        s3 = func;
+
+        if (s1 > s2 && s3 > s2) {
+            gx *= -0.9;
+            gy *= -0.9;
+        }
+
+        qDebug() << func << x << y;
+        x -= gx;
+        y -= gy;
+
+        if (abs(func) <= DESCENT_EPSILON) { break; }
+        std::this_thread::sleep_for(std::chrono::microseconds(50000));
+    }
+
+    qDebug() << "============";
+    while (1) { std::this_thread::sleep_for(std::chrono::microseconds(1000000)); }
+    // change 1 var
+    // compute f
+
+    // change 2 var
+    // compute f
+
+    //
+}
+
 int main(int argc, char *argv[])
 {
-    simLoopSleepUs = 1000 * 1000;
+    simLoopSleepUs = 100 ;//1000 * 1000;
     simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -440,10 +551,14 @@ int main(int argc, char *argv[])
     inputN ->isInput  = true;
     outputN->isOutput = true;
 
-    //initWeightsRandom();
     initWeights(1.0);
+    initWeightsRandom();
 
     double inval = -10;
+
+    int exp = 0;
+
+    grad();
 
     while (running) {
 
@@ -456,31 +571,32 @@ int main(int argc, char *argv[])
 // ======================================================================================
 // ======================================================================================
 
-            printLayer(0);
-            printLayer(1);
-            printLayer(2);
+//        double input = exp / (double)NUM_EXPERIMENTS;
+//        double target = exp / (double)NUM_EXPERIMENTS;
 
-//        inputN->setOutput(inval);
-//        qDebug() << inval << computeForward(inval);
-//
-//        qDebug() << "-----------------------";
-//        for (Neuron* n : neurons) { qDebug() << n->output; }
-//        qDebug() << "-----------------------";
-//
-//        inval += 1;
-//        if (inval > 10) { inval = -10; }
+        double input  = 1;
+        double target = 0.2;
 
-        //inputN->setOutput(1);
+        resetNN();
 
+        inputN->setOutput(input);
+        computeLayerForward(0);
+        computeLayerForward(1);
+        computeLayerForward(2);
 
-        //for (double v = -1; v < 1.0; v +=0.1) {
-        //    qDebug() << nn[0][1]->activate(v);
-        //}
+        double output = outputN->output;
 
+        double err = (target - output)*(target - output);
 
-//        qDebug() << "==========================================";
-//        for (Neuron* n : neurons) { n->printLinksIn (); }
-//        qDebug() << "==========================================";
+        for (Neuron* n : layersFwd[1]) {
+            n->updateInLinkWeights(-err * 0.01);
+        }
+
+        qDebug() << output << err << nn[0][1]->linksIn[0]->weight;
+
+        qDebug() << "==========================================";
+        for (Neuron* n : neurons) { n->printLinksIn (); }
+        qDebug() << "==========================================";
 //        std::reverse(neurons.begin(), neurons.end());
 //        for (Neuron* n : neurons) { n->printLinksOut(); }
 //        qDebug() << "==========================================";
