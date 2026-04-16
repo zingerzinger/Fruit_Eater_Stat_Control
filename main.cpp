@@ -97,12 +97,10 @@ struct Link
     void print();
 };
 
-#define TAN_ONE (1 / 1.5575)
+#define NUM_EXPERIMENTS 1000 // perform all experiments (values are the dataset)
 
-#define NUM_EXPERIMENTS     1000 // perform all experiments (values are the dataset)
-
-#define INIT_WEIGHT_MIN -1.0
-#define INIT_WEIGHT_MAX  1.0
+#define INIT_WEIGHT_MIN -0.5
+#define INIT_WEIGHT_MAX  0.5
 
 #define WEIGHT_DELTA_NOISE_MIN -0.01
 #define WEIGHT_DELTA_NOISE_MAX  0.01
@@ -159,8 +157,8 @@ struct Neuron
 
     double activate(double val) {
         // sigmoid : 1 / (1 + e^-x)
-        return 1.0 / (1.0 + pow(M_E, -val));
-        //return val;
+        //return 1.0 / (1.0 + pow(M_E, -val));
+        return val;
     }
 
     double derivative(double val) {
@@ -541,19 +539,14 @@ void grad()
         x -= gx;
         y -= gy;
 
-        if (abs(func) <= DESCENT_EPSILON) { break; }
+        if (abs(func) <= DESCENT_EPSILON) {
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::microseconds(50000));
     }
 
     qDebug() << "============";
-//    while (1) { std::this_thread::sleep_for(std::chrono::microseconds(1000000)); }
-    // change 1 var
-    // compute f
 
-    // change 2 var
-    // compute f
-
-    //
 }
 
 int main(int argc, char *argv[])
@@ -624,7 +617,7 @@ int main(int argc, char *argv[])
 
         while (1) {
 
-            double nnVal = computeNN(1.0);
+            double nnVal = computeNN(0.5);
             double funcVal = (nnVal - target);
 
             s1 = s2;
