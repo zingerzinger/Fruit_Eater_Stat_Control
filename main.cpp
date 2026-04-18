@@ -109,7 +109,7 @@ typedef struct model_t {
 
 int Okay(TF_Status* status) {
   if (TF_GetCode(status) != TF_OK) {
-    fprintf(stderr, "ERROR: %s\n", TF_Message(status));
+    qDebug() << "ERROR: " << TF_Message(status);
     return 0;
   }
   return 1;
@@ -118,24 +118,23 @@ int Okay(TF_Status* status) {
 TF_Buffer* ReadFile(const char* filename) {
   int fd = open(filename, 0);
   if (fd < 0) {
-    perror("failed to open file: ");
+    qDebug() << "failed to open file";
     return NULL;
   }
   struct stat stat;
   if (fstat(fd, &stat) != 0) {
-    perror("failed to read file: ");
+    qDebug() << "failed to read file";
     return NULL;
   }
   char* data = (char*)malloc(stat.st_size);
   ssize_t nread = read(fd, data, stat.st_size);
   if (nread < 0) {
-    perror("failed to read file: ");
+    qDebug() << "failed to read file";
     free(data);
     return NULL;
   }
   if (nread != stat.st_size) {
-    fprintf(stderr, "read %zd bytes, expected to read %zd\n", nread,
-            stat.st_size);
+    qDebug() << "read " << nread << "bytes, expected to read" << stat.st_size;
     free(data);
     return NULL;
   }
@@ -162,7 +161,7 @@ int ModelCreate(model_t* model, const char* graph_def_filename) {
     // Import the graph.
     TF_Buffer* graph_def = ReadFile(graph_def_filename);
     if (graph_def == NULL) return 0;
-    printf("Read GraphDef of %zu bytes\n", graph_def->length);
+    qDebug() << "Read GraphDef of " << graph_def->length << " bytes\n";;
     TF_ImportGraphDefOptions* opts = TF_NewImportGraphDefOptions();
     TF_GraphImportGraphDef(g, graph_def, opts, model->status);
     TF_DeleteImportGraphDefOptions(opts);
@@ -171,17 +170,14 @@ int ModelCreate(model_t* model, const char* graph_def_filename) {
   }
 
   // Handles to the interesting operations in the graph.
-  model->input.oper = TF_GraphOperationByName(g, "input");
-  model->input.index = 0;
-  model->target.oper = TF_GraphOperationByName(g, "target");
-  model->target.index = 0;
-  model->output.oper = TF_GraphOperationByName(g, "output");
-  model->output.index = 0;
+  model->input .oper = TF_GraphOperationByName(g, "input" ); model->input.index  = 0;
+  model->target.oper = TF_GraphOperationByName(g, "target"); model->target.index = 0;
+  model->output.oper = TF_GraphOperationByName(g, "output"); model->output.index = 0;
 
-  model->init_op = TF_GraphOperationByName(g, "init");
-  model->train_op = TF_GraphOperationByName(g, "train");
-  model->save_op = TF_GraphOperationByName(g, "save/control_dependency");
-  model->restore_op = TF_GraphOperationByName(g, "save/restore_all");
+  model->init_op    = TF_GraphOperationByName(g, "init"                   );
+  model->train_op   = TF_GraphOperationByName(g, "train"                  );
+  model->save_op    = TF_GraphOperationByName(g, "save/control_dependency");
+  model->restore_op = TF_GraphOperationByName(g, "save/restore_all"       );
 
   model->checkpoint_file.oper = TF_GraphOperationByName(g, "save/Const");
   model->checkpoint_file.index = 0;
@@ -202,6 +198,82 @@ int ModelInit(model_t* model) {
   return Okay(model->status);
 }
 
+int ModelPredict(model_t* model, float* batch, int batch_size) {
+  // batch consists of 1x1 matrices.
+  const int64_t dims[3] = {batch_size, 1, 1};
+  const size_t nbytes = batch_size * sizeof(float);
+  TF_Tensor* t = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
+  memcpy(TF_TensorData(t), batch, nbytes);
+
+  TF_Output  inputs       [1] = {model->input};
+  TF_Tensor* input_values [1] = {t};
+  TF_Output   outputs     [1] = {model->output};
+  TF_Tensor* output_values[1] = {NULL};
+
+  TF_SessionRun(model->session, NULL, inputs, input_values, 1, outputs,
+                output_values, 1,
+                /* No target operations to run */
+                NULL, 0, NULL, model->status);
+
+  TF_DeleteTensor(t);
+  if (!Okay(model->status)) { return 0; };
+
+  if (TF_TensorByteSize(output_values[0]) != nbytes) {
+    qDebug() << "ERROR: Expected predictions tensor to have " << nbytes << " bytes, has " << TF_TensorByteSize(output_values[0]);
+    TF_DeleteTensor(output_values[0]);
+    return 0;
+  }
+  float* predictions = (float*)malloc(nbytes);
+  memcpy(predictions, TF_TensorData(output_values[0]), nbytes);
+  TF_DeleteTensor(output_values[0]);
+
+  qDebug() << "Predictions";
+  for (int i = 0; i < batch_size; ++i) {
+    qDebug() << "\t x =" << batch[i] << "predicted y = " << predictions[i];
+  }
+  free(predictions);
+  return 1;
+}
+
+void NextBatchForTraining(TF_Tensor** inputs_tensor,
+                          TF_Tensor** targets_tensor) {
+#define BATCH_SIZE 10
+  float inputs [BATCH_SIZE] = {0};
+  float targets[BATCH_SIZE] = {0};
+  for (int i = 0; i < BATCH_SIZE; ++i) {
+    inputs[i] = (float)rand() / (float)RAND_MAX;
+    targets[i] = 3.0 * inputs[i] + 2.0;
+  }
+  const int64_t dims[] = {BATCH_SIZE, 1, 1};
+  size_t nbytes = BATCH_SIZE * sizeof(float);
+  *inputs_tensor = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
+  *targets_tensor = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
+  memcpy(TF_TensorData(*inputs_tensor), inputs, nbytes);
+  memcpy(TF_TensorData(*targets_tensor), targets, nbytes);
+#undef BATCH_SIZE
+}
+
+int ModelRunTrainStep(model_t* model) {
+  TF_Tensor *x, *y;
+  NextBatchForTraining(&x, &y);
+  TF_Output inputs[2] = {model->input, model->target};
+  TF_Tensor* input_values[2] = {x, y};
+  const TF_Operation* train_op[1] = {model->train_op};
+  TF_SessionRun(model->session, NULL, inputs, input_values, 2,
+                /* No outputs */
+                NULL, NULL, 0, train_op, 1, NULL, model->status);
+  TF_DeleteTensor(x);
+  TF_DeleteTensor(y);
+  return Okay(model->status);
+}
+
+void ModelDestroy(model_t* model) {
+  TF_DeleteSession(model->session, model->status);
+  Okay(model->status);
+  TF_DeleteGraph(model->graph);
+  TF_DeleteStatus(model->status);
+}
+
 void tf_experiments()
 {
     Session* session;
@@ -213,6 +285,8 @@ void tf_experiments()
 //    int restore = DirectoryExists("checkpoints");
 
     int restore = 0;
+
+    // === load model ===
 
     model_t model;
     qDebug() <<  "Loading graph";
@@ -227,6 +301,24 @@ void tf_experiments()
         if (!ModelInit(&model)) { qDebug() << "ModelInit error"; };
     }
 
+    // === experiment ===
+
+    float testdata[3] = {1.0, 2.0, 3.0};
+    qDebug() << "Initial predictions";
+    if (!ModelPredict(&model, &testdata[0], 3)) { qDebug() << "Model predict error"; };
+
+    qDebug() << "Training for a few steps";
+    for (int i = 0; i < 200; ++i) {
+      if (!ModelRunTrainStep(&model)) { qDebug() << "Initial predictions"; };
+    }
+
+    qDebug() << "Updated predictions";
+    if (!ModelPredict(&model, &testdata[0], 3)) { qDebug() << "Initial predictions"; };
+
+//    qDebug() << "Saving checkpoint";
+//    if (!ModelCheckpoint(&model, checkpoint_prefix, SAVE)) return 1;
+
+    ModelDestroy(&model);
 }
 
 int main(int argc, char *argv[])
