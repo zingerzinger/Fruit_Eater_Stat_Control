@@ -63,25 +63,25 @@ void processInput()
 
                 if (event.key.keysym.sym == SDLK_m) { creature->manual = !creature->manual; }
 
-                if (event.key.keysym.sym == SDLK_q) {
-                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
-                    simSkipFrames--;
+//                if (event.key.keysym.sym == SDLK_q) {
+//                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
+//                    simSkipFrames--;
+//
+//                    if (simSkipFrames <= 0) {
+//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+//                    }
+//                }
 
-                    if (simSkipFrames <= 0) {
-                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-                    }
-                }
-
-                if (event.key.keysym.sym == SDLK_w) {
-                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
-                    simSkipFrames++;
-
-                    if (simLoopSleepUs <= 0) {
-                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-                    }
-                }
+//                if (event.key.keysym.sym == SDLK_w) {
+//                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
+//                    simSkipFrames++;
+//
+//                    if (simLoopSleepUs <= 0) {
+//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
+//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+//                    }
+//                }
 
             } break;
 
@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
     //testTelem(); return 0;
 
     simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-    simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
+//    simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
 
     SDL_Init(SDL_INIT_EVERYTHING);
 

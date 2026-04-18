@@ -6,84 +6,6 @@
 #include "defines.h"
 #include "utils.h"
 
-// === NN ===
-
-// ideas:
-/*
- * fitness criteria:
- * minimize time to target (TTT) (maximize speed):
- *  T   = targetChange-targetChange
- *  D   = targetDistance-targetDistancePrev
- *  TTT = D/T
- *
- * random weights calculation
- * 0.1 step [-1..1]
- *
- * ! NO NN resources freed upon shutdown, DNC for now
- *
- */
-
-struct Neuron;
-
-struct Link
-{
-    Link(Neuron* neuronFrom, Neuron* neuronTo, double weight)
-    {
-        this->neurFrom = neuronFrom;
-        this->neurTo   = neuronTo;
-        this->weight = weight;
-    }
-
-    Neuron* neurFrom;
-    Neuron* neurTo;
-    double weight;
-};
-
-struct Neuron
-{
-    bool signalCalculated = false;
-    double output = 0;
-
-    QVector<Link*> links;
-
-    void normalizeWeights()
-    {
-        double weights = 0.0;
-
-        for (Link* link : links) {
-            weights += link->weight;
-        }
-
-        for (Link* link : links) {
-            link->weight /= weights;
-        }
-    }
-
-    double Signal()
-    {
-         if (signalCalculated) { return output; }
-
-         double out = 0;
-
-         for (Link* link : links) {
-             out += link->neurFrom->Signal() * link->weight;
-         }
-
-         signalCalculated = true;
-         output = out;
-         return output;
-
-    }
-
-    // for input neurons
-    void setSignal(double value) {
-        signalCalculated = true;
-        output = value;
-    }
-};
-
-static bool nn_setup_done = false;
-
 class Creature
 {
 public:
@@ -144,44 +66,6 @@ private:
                     double angleError,
                     double angleErrorDelta,
                     double targetDistance);
-
-    void control_NN(double w,
-                    double orientation,
-                    Vec2   pos,
-                    double vel,
-                    float  rotF,
-                    float  fwdF,
-                    Vec2   targetPos,
-                    double angleError,
-                    double angleErrorDelta,
-                    double targetDistance);
-
-    // === === ===
-
-    Neuron ni_angleError;
-    Neuron ni_angleDError;
-    Neuron ni_fwdf;
-
-    Neuron no_rotF;
-    Neuron no_fwdf;
-
-    QVector<Neuron*> neurons;
-
-    /* ni_angleError --> no_rotF
-     * ni_fwdf       --> no_fwdf
-     */
-
-    double maxTTT = 0.0;
-    double bestWeight = 0.0;
-
-    int numEpoch = 0;
-    double cTTT = 0;
-    double cweight = 0.01;
-    double ccweight = 1.0;
-
-    bool IpassOk  = false;
-    bool IIpassOk = false;
-
 };
 
 Creature::Creature()
@@ -228,75 +112,6 @@ void Creature::removeFruit(Vec2 f)
     }
 }
 
-#define EPOCHS_PER_WEIGHT 2
-
-void Creature::calcWeights()
-{
-    int64_t T = frameNum - frameNumPrev;
-    double  D = targetDistancePrev;
-    double  TTT = D / T;
-
-    cTTT += TTT;
-
-    frameNumPrev = frameNum;
-    targetDistancePrev = targetDistance;
-
-    // === === ===
-
-    qDebug() << no_rotF.links[0]->weight << "|" << no_rotF.links[1]->weight << "|" << TTT;
-
-    numEpoch++;
-
-    if (!IpassOk) {
-
-        no_rotF.links[0]->weight = cweight;
-        //no_rotF.normalizeWeights();
-
-        if (numEpoch % EPOCHS_PER_WEIGHT == 0) {
-            qDebug() << "ITER";
-            cTTT = 0;
-            cweight += 0.1;
-            if (cweight >= 1.0) { cweight = 0.0; IpassOk = true; }
-        }
-    }
-
-    if (IpassOk && !IIpassOk) {
-
-        no_rotF.links[0]->weight = ccweight;
-        no_rotF.links[1]->weight = cweight;
-        //no_rotF.normalizeWeights();
-
-        if (numEpoch % EPOCHS_PER_WEIGHT == 0) {
-            qDebug() << "ITER";
-            cTTT = 0;
-            cweight += 5.0;
-            ccweight -= 0.025;
-            if (cweight >= 50.0) { cweight = 1.0; IIpassOk = true; }
-        }
-    }
-}
-
-void Creature::control_NN(double in_w,
-                          double in_orientation,
-                          Vec2   in_pos,
-                          double in_vel,
-                          float  in_rotF,
-                          float  in_fwdF,
-                          Vec2   in_targetPos,
-                          double in_angleError,
-                          double angleErrorDelta,
-                          double in_targetDistance)
-{
-    for (Neuron* n : neurons) { n->signalCalculated = false; }
-
-    ni_angleError .setSignal(in_angleError);
-    ni_angleDError.setSignal(angleErrorDelta);
-    ni_fwdf       .setSignal(1.0);
-
-    rotF = no_rotF.Signal();
-    fwdF = no_fwdf.Signal();
-}
-
 // === === ===
 
 void Creature::step(double dt_secs)
@@ -312,17 +127,6 @@ void Creature::step(double dt_secs)
     if (manual) { return; }
 
     frameNum++;
-
-    if (!nn_setup_done) {
-        nn_setup_done = true;
-
-        neurons.append(&no_rotF      );
-        neurons.append(&no_fwdf      );
-
-        no_rotF.links.append(new Link(&ni_angleError , &no_rotF, 0.0));
-        no_rotF.links.append(new Link(&ni_angleDError, &no_rotF, 0.0));
-        no_fwdf.links.append(new Link(&ni_fwdf       , &no_fwdf, 1.0));
-    }
 
     // target calculation - search for closest ETA fruit ((?)rotation + distance)
 
@@ -343,7 +147,7 @@ void Creature::step(double dt_secs)
 
         uint64_t ctime = micros();
 
-        if (ctime - ltimeNoFruit >= CREATURE_NO_FRUIT_RND_USEC ||
+        if (/*ctime - ltimeNoFruit >= CREATURE_NO_FRUIT_RND_USEC || */
             VecLenSq( subVec(target, pos) ) <= /* do not get too close to the random target to counter singularity */
             (CREATURE_RND_MIN_TARGET_APPROACH_DIST * CREATURE_RND_MIN_TARGET_APPROACH_DIST)) {
 
@@ -385,14 +189,13 @@ void Creature::step(double dt_secs)
     // === === ===
 
     if (targetChange) {
-        calcWeights();
         frameNumPrev = frameNum;
         targetDistancePrev = targetDistance;
     }
 
     // === === ===
 
-    control_NN(w,
+    control_PD(w,
                orientation,
                pos,
                vel,
@@ -425,11 +228,7 @@ void Creature::control_PD(double in_w,
         fwdF = 1;
     }
 
-    rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir - CREATURE_ROT_D_K * angleErrorDelta;
-
-//    deltaDegsPrev = in_angleError;
-//
-//    angleError = in_angleError;
+    rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
 }
 
 #endif // CREATURE_H
