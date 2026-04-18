@@ -1,3 +1,10 @@
+#
+# Build & run:
+# 1. Create model using create_model.py
+# 2. Build Qt/SDL/C++ application
+# 3. Run
+#
+
 QT -= gui
 
 CONFIG += c++14 console # c++14 is important for tensorflow!
@@ -24,5 +31,8 @@ unix:!macx: LIBS += -L$$PWD/../../../../../usr/local/lib/ -ltensorflow_cc
 HEADERS += \
     defines.h \
     utils.h
+
+DISTFILES += \
+    create_model.py
 
 
