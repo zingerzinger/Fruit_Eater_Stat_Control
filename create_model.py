@@ -5,13 +5,13 @@ tf.disable_v2_behavior()
 
 # Batch of input and target output (1x1 matrices)
 x = tf.placeholder(tf.float32, shape=[None, 1, 1], name='input')
-y = tf.placeholder(tf.float32, shape=[None, 1, 1], name='target')                    # y --\
-                                                                                     #     |
-# Trivial linear model                                                               #     |
-y_ = tf.identity(tf.layers.dense(x, 1), name='output')                               #     |
-                                                                                     #     |
-# Optimize loss                                                                      #     |
-loss = tf.reduce_mean(tf.square(y_ - y), name='loss')  # <---------------------------------/
+y = tf.placeholder(tf.float32, shape=[None, 1, 1], name='target') # y --\
+                                                                  #     |
+# Trivial linear model                                            #     |
+y_ = tf.identity(tf.layers.dense(x, 1), name='output') #--\       #     |
+                              #   ________________________/       #     |
+# Optimize loss               #  v    __________________________________/
+loss = tf.reduce_mean(tf.square(y_ - y), name='loss')
 optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01)
 train_op = optimizer.minimize(loss, name='train')
 

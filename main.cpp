@@ -236,32 +236,59 @@ int ModelPredict(model_t* model, float* batch, int batch_size) {
 }
 
 void NextBatchForTraining(TF_Tensor** inputs_tensor,
-                          TF_Tensor** targets_tensor) {
-#define BATCH_SIZE 10
+                          TF_Tensor** targets_tensor,
+                          TF_Tensor** outputs_tensor /*filled during training*/) {
+#define BATCH_SIZE 1
   float inputs [BATCH_SIZE] = {0};
   float targets[BATCH_SIZE] = {0};
   for (int i = 0; i < BATCH_SIZE; ++i) {
     inputs[i] = (float)rand() / (float)RAND_MAX;
     targets[i] = 3.0 * inputs[i] + 2.0;
   }
+
   const int64_t dims[] = {BATCH_SIZE, 1, 1};
   size_t nbytes = BATCH_SIZE * sizeof(float);
-  *inputs_tensor = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
+
+  *inputs_tensor  = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
   *targets_tensor = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
-  memcpy(TF_TensorData(*inputs_tensor), inputs, nbytes);
+  *outputs_tensor = TF_AllocateTensor(TF_FLOAT, dims, 3, nbytes);
+
+  memcpy(TF_TensorData(*inputs_tensor ), inputs , nbytes);
   memcpy(TF_TensorData(*targets_tensor), targets, nbytes);
+
 #undef BATCH_SIZE
 }
 
 int ModelRunTrainStep(model_t* model) {
-  TF_Tensor *x, *y;
-  NextBatchForTraining(&x, &y);
+  TF_Tensor *x, *y, *tout;
+  NextBatchForTraining(&x, &y, &tout);
   TF_Output inputs[2] = {model->input, model->target};
+
+  TF_Output outputs[1] = {model->output};
+
   TF_Tensor* input_values[2] = {x, y};
+
+  TF_Tensor* output_values[1] = {tout};
+
   const TF_Operation* train_op[1] = {model->train_op};
   TF_SessionRun(model->session, NULL, inputs, input_values, 2,
-                /* No outputs */
-                NULL, NULL, 0, train_op, 1, NULL, model->status);
+                // debug output tensors
+                outputs, output_values, 1,
+                // Target operations
+                train_op, 1, NULL, model->status);
+
+  // === debug ===
+
+  float xdata = *(float*)TF_TensorData(x);
+  float ydata = *(float*)TF_TensorData(y);
+
+  float outdata = *(float*)TF_TensorData(tout);
+
+//  qDebug() << xdata << "|" << ydata << "|" << ( (ydata - outdata) * (ydata - outdata) );
+    qDebug() << xdata << "|" << ydata << "|" << outdata;
+
+  // === === ===
+
   TF_DeleteTensor(x);
   TF_DeleteTensor(y);
   return Okay(model->status);
@@ -303,17 +330,17 @@ void tf_experiments()
 
     // === experiment ===
 
-    float testdata[3] = {1.0, 2.0, 3.0};
-    qDebug() << "Initial predictions";
-    if (!ModelPredict(&model, &testdata[0], 3)) { qDebug() << "Model predict error"; };
+//    float testdata[3] = {1.0, 2.0, 3.0};
+//    qDebug() << "Initial predictions";
+//    if (!ModelPredict(&model, &testdata[0], 3)) { qDebug() << "Model predict error"; };
 
     qDebug() << "Training for a few steps";
     for (int i = 0; i < 200; ++i) {
       if (!ModelRunTrainStep(&model)) { qDebug() << "Initial predictions"; };
     }
 
-    qDebug() << "Updated predictions";
-    if (!ModelPredict(&model, &testdata[0], 3)) { qDebug() << "Initial predictions"; };
+//    qDebug() << "Updated predictions";
+//    if (!ModelPredict(&model, &testdata[0], 3)) { qDebug() << "Initial predictions"; };
 
 //    qDebug() << "Saving checkpoint";
 //    if (!ModelCheckpoint(&model, checkpoint_prefix, SAVE)) return 1;
