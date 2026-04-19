@@ -5,6 +5,7 @@
 
 #include "defines.h"
 #include "utils.h"
+#include "mchain.h"
 
 class Creature
 {
@@ -38,6 +39,9 @@ public:
 
     bool manual = true;
 
+    Mchain* mcSteering;
+    Mchain* mcThrottle;
+
 private:
 
     Vec2 lpos;
@@ -66,11 +70,25 @@ private:
                     double angleError,
                     double angleErrorDelta,
                     double targetDistance);
+
+    void control_MC(double w,
+                    double orientation,
+                    Vec2   pos,
+                    double vel,
+                    float  rotF,
+                    float  fwdF,
+                    Vec2   targetPos,
+                    double angleError,
+                    double angleErrorDelta,
+                    double targetDistance);
 };
 
 Creature::Creature()
 {
     pos = Vec2(W_W / 2, W_H / 2);
+
+    mcSteering = new Mchain(CRS_STR_NUM_STATES);
+    mcThrottle = new Mchain(CRS_THR_NUM_STATES);
 }
 
 void Creature::manualControl(double speed, double direction)
@@ -195,7 +213,7 @@ void Creature::step(double dt_secs)
 
     // === === ===
 
-    control_PD(w,
+    control_MC(w,
                orientation,
                pos,
                vel,
@@ -229,6 +247,48 @@ void Creature::control_PD(double in_w,
     }
 
     rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
+}
+
+void Creature::control_MC(double w,
+                          double orientation,
+                          Vec2   pos,
+                          double vel,
+                          float  rotF,
+                          float  fwdF,
+                          Vec2   targetPos,
+                          double angleError,
+                          double angleErrorDelta,
+                          double targetDistance)
+{
+    static double ddegsFiltered = 0.0;
+    ddegsFiltered = ddegsFiltered * 0.95 + 0.05 * angleError;
+
+    qDebug() << ddegsFiltered;
+
+    mcSteering->chooseMostProbableState();
+    mcThrottle->chooseMostProbableState();
+
+    mcSteering->increaseProbabilityByAmount(ddegsFiltered > 0 ? CRS_STR_L : CRS_STR_R,
+                                            ddegsFiltered > 0 ? CRS_STR_R : CRS_STR_L,
+                                            0.05);
+
+    switch (mcSteering->cstate) {
+        case (CRS_STR_L   ) : { this->rotF =  CREATURE_ANGFMAX; }; break;
+        case (CRS_STR_R   ) : { this->rotF = -CREATURE_ANGFMAX; }; break;
+        case (CRS_STR_NONE) : { this->rotF = 0;                 }; break;
+    }
+
+    mcSteering->print();
+
+//    switch (mcThrottle->cstate) {
+//        case (CRS_THR_FWD ) : { this->fwdF =  CREATURE_FWDFMAX; }; break;
+//        case (CRS_THR_BCK ) : { this->fwdF = -CREATURE_FWDFMAX; }; break;
+//        case (CRS_THR_NONE) : { this->fwdF = 0;                 }; break;
+//    }
+
+    this->fwdF =  CREATURE_FWDFMAX * 0.1;
+
+    //qDebug() << mcSteering->cstate << mcThrottle->cstate;
 }
 
 #endif // CREATURE_H

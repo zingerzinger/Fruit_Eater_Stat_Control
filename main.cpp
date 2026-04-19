@@ -14,6 +14,8 @@
 #include "sim.h"
 #include "creature.h"
 
+#include "mchain.h"
+
 using namespace std;
 
 SDL_Window* window;
@@ -183,7 +185,12 @@ int main(int argc, char *argv[])
 
     uint64_t frameNum = 0;
 
+    //Mchain* mc = new Mchain(2);
+
     while (running) {
+
+        //mc->chooseMostProbableState();
+        //qDebug() << mc->cstate;
 
         SDL_PumpEvents();
 

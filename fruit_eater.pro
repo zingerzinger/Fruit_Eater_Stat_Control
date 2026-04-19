@@ -20,5 +20,6 @@ LIBS += -L/usr/lib -lSDL2 -lSDL2_ttf
 HEADERS += \
     creature.h \
     defines.h \
+    mchain.h \
     sim.h \
     utils.h

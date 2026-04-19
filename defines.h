@@ -34,6 +34,16 @@
 #define CREATURE_FWDFMAX 20
 #define CREATURE_ANGFMAX 10
 
+#define CRS_STR_NUM_STATES 3
+#define CRS_STR_L    0
+#define CRS_STR_R    1
+#define CRS_STR_NONE 2
+
+#define CRS_THR_NUM_STATES 3
+#define CRS_THR_FWD  0
+#define CRS_THR_BCK  1
+#define CRS_THR_NONE 2
+
 #define FRUIT_R 4
 #define FRUIT_MEM_MARGIN 3
 
