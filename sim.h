@@ -28,9 +28,12 @@ public:
     void addCreature(int id, Creature &creature);
     void removeCreature(int id);
 
+    void addFruitsRandom();
     void addFruit(Vec2 pos);
 
 private:
+
+    bool checkDistance(Vec2 f);
 
     QVector<Creature*> creatures;
     QVector<Vec2> fruits;
@@ -121,8 +124,22 @@ void Sim::render()
         }
     }
 
+    SDL_Rect foodRect;
     for (Creature* c : creatures) {
-        // FOV & direction
+        foodRect.x = c->pos.x - (CREATURE_FOOD_MAX/2);
+        foodRect.y = c->pos.y - (20);
+        foodRect.w = c->food;
+        foodRect.h = 5;
+
+        SDL_SetRenderDrawColor(renderer,   0, 255,   0, 0); // green
+        SDL_RenderFillRect(renderer, &foodRect);
+        SDL_SetRenderDrawColor(renderer, 128, 128, 128, 0); // gray
+        foodRect.w = CREATURE_FOOD_MAX;
+        SDL_RenderDrawRect(renderer, &foodRect);
+    }
+
+    for (Creature* c : creatures) {
+        // FOV, direction
 
         Vec2 vc;
 
@@ -189,9 +206,36 @@ void Sim::setVisualEnabled(bool enabled)
 
 }
 
+bool Sim::checkDistance(Vec2 fn)
+{
+    for (Vec2 f : fruits) {
+        double distSq = VecLenSq(subVec(f, fn));
+        if (distSq <= RND_FRUIT_SPACING*RND_FRUIT_SPACING) { return false; }
+    }
+
+    return true;
+}
+
 void Sim::addFruit(Vec2 pos)
 {
     fruits.append(pos);
+}
+
+void Sim::addFruitsRandom()
+{
+    bool needBreak = false;
+
+    while (true) {
+
+        for (int i = 0; i < RND_GEN_ATTEMPS; i++) {
+            Vec2 nf(fRand(0.0, W_W), fRand(0.0, W_H));
+            needBreak = !checkDistance(nf);
+            if (needBreak) { break; }
+            fruits.append(nf);
+        }
+
+        if (needBreak || fruits.size() < RND_NUM_FRUITS) { break; }
+    }
 }
 
 void Sim::step(double dt_secs)
@@ -218,6 +262,8 @@ void Sim::step(double dt_secs)
     // creature - fruit interaction (no ray-sphere intersection yet)
     for (Creature* c : creatures) {
 
+        c->food = clamp(c->food -= CREATURE_FOOD_HUNGER_PS * dt_secs, 0.0, CREATURE_FOOD_MAX);
+
         for (int i = fruits.size()-1; i >= 0; i--) {
             Vec2 f = fruits[i];
 
@@ -225,6 +271,7 @@ void Sim::step(double dt_secs)
 
             if (VecLenSq( delta ) <= ((CREATURE_R+FRUIT_R)*(CREATURE_R+FRUIT_R))) {
                 c->removeFruit(f);
+                c->food = clamp(c->food += SIM_FRUIT_FOOD, 0.0, CREATURE_FOOD_MAX);
                 fruits.remove(i);
             }
         }

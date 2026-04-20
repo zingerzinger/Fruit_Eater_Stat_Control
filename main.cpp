@@ -63,6 +63,8 @@ void processInput()
                 if (event.key.keysym.sym == SDLK_LEFT ) { lpressed =  true; }
                 if (event.key.keysym.sym == SDLK_RIGHT) { rpressed =  true; }
 
+                if (event.key.keysym.sym == SDLK_u) { sim->addFruitsRandom(); }
+
                 if (event.key.keysym.sym == SDLK_m) { creature->manual = !creature->manual; }
 
 //                if (event.key.keysym.sym == SDLK_q) {

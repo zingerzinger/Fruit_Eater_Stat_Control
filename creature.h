@@ -42,6 +42,8 @@ public:
     Mchain* mcSteering;
     Mchain* mcThrottle;
 
+    double food = 100.0;
+
 private:
 
     Vec2 lpos;
@@ -213,7 +215,7 @@ void Creature::step(double dt_secs)
 
     // === === ===
 
-    control_MC(w,
+    control_PD(w,
                orientation,
                pos,
                vel,
