@@ -15,11 +15,16 @@
 #include "creature.h"
 
 #include "mchain.h"
+#include "genetics.h"
 
 using namespace std;
 
 SDL_Window* window;
 SDL_Renderer* renderer;
+
+Sim*      sim;
+Creature* creature;
+Genetics* genetics;
 
 bool running = true;
 
@@ -30,13 +35,9 @@ bool dpressed = false;
 bool lpressed = false;
 bool rpressed = false;
 
-int simLoopSleepUs;
 int simSkipFrames;
 
 TTF_Font* font;
-
-Sim* sim;
-Creature* creature;
 
 void processInput()
 {
@@ -67,25 +68,13 @@ void processInput()
 
                 if (event.key.keysym.sym == SDLK_m) { creature->manual = !creature->manual; }
 
-//                if (event.key.keysym.sym == SDLK_q) {
-//                    simLoopSleepUs += SIM_LOOP_SLEEP_STEP_US;
-//                    simSkipFrames--;
-//
-//                    if (simSkipFrames <= 0) {
-//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-//                    }
-//                }
+                if (event.key.keysym.sym == SDLK_q) {
+                    simSkipFrames -= 10; if (simSkipFrames <= 0) { simSkipFrames = 1; }
+                }
 
-//                if (event.key.keysym.sym == SDLK_w) {
-//                    simLoopSleepUs -= SIM_LOOP_SLEEP_STEP_US;
-//                    simSkipFrames++;
-//
-//                    if (simLoopSleepUs <= 0) {
-//                        simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-//                        simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-//                    }
-//                }
+                if (event.key.keysym.sym == SDLK_w) {
+                    simSkipFrames += 10; if (simSkipFrames >= SIM_SKIP_RENDER_FRAMES_MAX) { simSkipFrames = SIM_SKIP_RENDER_FRAMES_MAX; }
+                }
 
             } break;
 
@@ -160,9 +149,6 @@ int main(int argc, char *argv[])
 {
     //testTelem(); return 0;
 
-    simLoopSleepUs = SIM_LOOP_SLEEP_STEP_US;
-//    simSkipFrames  = SIM_SKIP_RENDER_FRAMES;
-
     SDL_Init(SDL_INIT_EVERYTHING);
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1" );
@@ -179,8 +165,10 @@ int main(int argc, char *argv[])
 
     // === === ===
 
-    sim = new Sim(renderer);
+    sim      = new Sim(renderer);
     creature = new Creature();
+    genetics = new Genetics(sim, creature);
+
     sim->addCreature(0, *creature);
 
     // === === ===
@@ -188,6 +176,9 @@ int main(int argc, char *argv[])
     uint64_t frameNum = 0;
 
     //Mchain* mc = new Mchain(2);
+
+    //simSkipFrames = 1;
+    simSkipFrames = SIM_SKIP_RENDER_FRAMES_MAX;
 
     while (running) {
 
@@ -208,14 +199,18 @@ int main(int argc, char *argv[])
 
         creature->manualControl(ud * CREATURE_FWDFMAX, lr * CREATURE_ANGFMAX);
 
-        sim->step(SIM_DT);
+        genetics->step(SIM_DT);
+        sim     ->step(SIM_DT);
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-        SDL_RenderClear(renderer);
-        sim->render();
-        SDL_RenderPresent(renderer);
+        if (frameNum % simSkipFrames == 0) {
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+            SDL_RenderClear(renderer);
+            sim->render();
+            SDL_RenderPresent(renderer);
+            std::this_thread::sleep_for(std::chrono::microseconds(SIM_LOOP_SLEEP_STEP_US));
+        }
 
-        std::this_thread::sleep_for(std::chrono::microseconds(simLoopSleepUs));
+        std::this_thread::sleep_for(std::chrono::microseconds(1));
 
         frameNum++;
     }

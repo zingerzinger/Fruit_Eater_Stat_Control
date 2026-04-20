@@ -31,6 +31,8 @@ public:
     void addFruitsRandom();
     void addFruit(Vec2 pos);
 
+    void reset();
+
 private:
 
     bool checkDistance(Vec2 f);
@@ -88,6 +90,8 @@ Sim::~Sim()
     delete telemStream;
     delete telemFile;
 }
+
+void Sim::reset() { fruits.clear(); }
 
 void Sim::renderArc(Vec2 p, double r, double sAngleDegs, double arcLenDegs, double angleStepDegs)
 {
@@ -225,21 +229,23 @@ void Sim::addFruitsRandom()
 {
     bool needBreak = false;
 
-    while (true) {
+    while (fruits.size() < RND_NUM_FRUITS) {
 
+        bool fruitOk = false;
         for (int i = 0; i < RND_GEN_ATTEMPS; i++) {
             Vec2 nf(fRand(0.0, W_W), fRand(0.0, W_H));
-            needBreak = !checkDistance(nf);
-            if (needBreak) { break; }
-            fruits.append(nf);
+            fruitOk = checkDistance(nf);
+            if (fruitOk) { fruits.append(nf); break; }
         }
 
-        if (needBreak || fruits.size() < RND_NUM_FRUITS) { break; }
+        if (!fruitOk) { break; }
     }
 }
 
 void Sim::step(double dt_secs)
 {
+    if (fruits.size() < RND_NUM_FRUITS / 2) { addFruitsRandom(); }
+
     // creature physics
     for (Creature* c : creatures) {
 

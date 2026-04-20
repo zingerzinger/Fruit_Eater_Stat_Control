@@ -19,6 +19,8 @@ public:
 
     void manualControl(double speed, double direction);
 
+    void reset();
+
     double w = 0.0;
     double orientation = 0.0;
 
@@ -37,12 +39,19 @@ public:
     double targetDistance = 0.0;
     bool targetChange = false;
 
-    bool manual = true;
+    bool manual = false;
 
     Mchain* mcSteering;
     Mchain* mcThrottle;
 
     double food = 100.0;
+
+    double ROT_P_K = 0.0; // 0.7;
+    double ROT_D_K = 0.0; // 100;
+    double ROT_I_K = 0.0; // 0.01;
+    double SPD_P_K = 0.0; // 0.3;
+
+    double accumulatedAngleError = 0.0;
 
 private:
 
@@ -93,6 +102,15 @@ Creature::Creature()
     mcThrottle = new Mchain(CRS_THR_NUM_STATES);
 }
 
+void Creature::reset()
+{
+    pos = Vec2(W_W / 2, W_H / 2);
+    food = CREATURE_FOOD_MAX;
+    accumulatedAngleError = 0.0;
+    fruits.clear();
+    trail.clear();
+}
+
 void Creature::manualControl(double speed, double direction)
 {
     if (!manual) { return; }
@@ -102,8 +120,6 @@ void Creature::manualControl(double speed, double direction)
 
 void Creature::showFruit(Vec2 f)
 {
-    if (fruits.size() >= CREATURE_MEM_MAX) { return; }
-
     for (Vec2 fm : fruits) {
         if (fm.x - FRUIT_MEM_MARGIN <= f.x &&
             fm.x + FRUIT_MEM_MARGIN >= f.x &&
@@ -112,6 +128,8 @@ void Creature::showFruit(Vec2 f)
     }
 
     fruits.append(f);
+
+    if (fruits.size() >= CREATURE_MEM_MAX) { fruits.removeFirst(); }
 }
 
 void Creature::removeFruit(Vec2 f)
@@ -192,8 +210,13 @@ void Creature::step(double dt_secs)
         }
     }
 
-    if (pos.x < 0 || pos.x > W_W ||
-        pos.y < 0 || pos.y > W_H) { pos = Vec2(W_W * 0.5, W_H * 0.5); }
+    if (pos.x <   0) { pos.x += W_W; }
+    if (pos.x > W_W) { pos.x -= W_W; }
+    if (pos.y <   0) { pos.y += W_H; }
+    if (pos.y > W_H) { pos.y -= W_H; }
+
+    //if (pos.x < 0 || pos.x > W_W ||
+    //    pos.y < 0 || pos.y > W_H) { pos = Vec2(W_W * 0.5, W_H * 0.5); }
 
     targetChange = targetIdx != prevTargetIdx;
     prevTargetIdx = targetIdx;
@@ -211,6 +234,7 @@ void Creature::step(double dt_secs)
     if (targetChange) {
         frameNumPrev = frameNum;
         targetDistancePrev = targetDistance;
+        accumulatedAngleError = 0.0;
     }
 
     // === === ===
@@ -229,6 +253,28 @@ void Creature::step(double dt_secs)
     deltaDegsPrev = deltaDegs;
 }
 
+//void Creature::control_PD(double in_w,
+//                          double in_orientation,
+//                          Vec2   in_pos,
+//                          double in_vel,
+//                          float  in_rotF,
+//                          float  in_fwdF,
+//                          Vec2   in_targetPos,
+//                          double in_angleError,
+//                          double angleErrorDelta,
+//                          double in_targetDistance)
+//{
+//    double dir = in_angleError > 0 ? 1 : -1;
+//
+//    rotF = abs(in_angleError) * dir;
+//
+//    if (abs(in_angleError) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
+//        fwdF = 1;
+//    }
+//
+//    rotF = (ROT_P_K * abs(in_angleError)) * dir + ROT_D_K * angleErrorDelta;
+//}
+
 void Creature::control_PD(double in_w,
                           double in_orientation,
                           Vec2   in_pos,
@@ -240,15 +286,10 @@ void Creature::control_PD(double in_w,
                           double angleErrorDelta,
                           double in_targetDistance)
 {
-    double dir = in_angleError > 0 ? 1 : -1;
+    accumulatedAngleError += in_angleError;
 
-    rotF = abs(in_angleError) * dir;
-
-    if (abs(in_angleError) < CREATURE_DELTA_ANGLE_ROT_DEGS) {
-        fwdF = 1;
-    }
-
-    rotF = (CREATURE_ROT_P_K * abs(in_angleError)) * dir + CREATURE_ROT_D_K * angleErrorDelta;
+    fwdF = SPD_P_K;
+    rotF = ROT_P_K * in_angleError + ROT_D_K * angleErrorDelta + ROT_I_K * accumulatedAngleError;
 }
 
 void Creature::control_MC(double w,
